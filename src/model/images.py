@@ -1,22 +1,4 @@
-import cv2
-from matplotlib import pyplot as plt
-import skimage
-from skimage.segmentation import clear_border
-from skimage.measure import label
-from skimage.morphology import remove_small_objects, binary_erosion, binary_dilation,binary_opening
-from skimage.measure import regionprops
-from skimage.morphology import disk #https://scikit-image.org/docs/stable/auto_examples/numpy_operations/plot_structuring_elements.html#sphx-glr-auto-examples-numpy-operations-plot-structuring-elements-py
-import os
-import cv2
-import numpy as np
-from matplotlib import pyplot as plt
-import copy
-import imageio
-
-from scipy import ndimage
-from scipy.stats import skew, kurtosis
-from shapely.geometry import Polygon
-from images import *
+from src.model.images import *
 
 
 def smooth(img):
@@ -65,7 +47,6 @@ def getFilesOnly(path):
 
 
 def processRL(img):
-    import skimage
     from skimage.segmentation import clear_border
     from skimage.measure import label
     from skimage.morphology import remove_small_objects, binary_erosion, binary_dilation
@@ -103,7 +84,7 @@ def plot(img, title):
 
 
 def removeSmallObjects(img, factor=6):
-    from skimage.morphology import remove_small_objects, binary_erosion, binary_dilation, binary_opening
+    from skimage.morphology import remove_small_objects
     from skimage.measure import regionprops
     from skimage.measure import label
     labelim = label(img)

@@ -1,39 +1,21 @@
-import tkinter as tk
-from tkinter import Tk, Label, Button, filedialog
-from tkinter import *
-from tkinter.ttk import *
-import os
-import json
-import re
-from PIL import ImageTk, Image
 import datetime
-import cv2
-import numpy as np
-import copy
-import imageio
-import scipy
-from scipy import ndimage
-import skimage
-from skimage.segmentation import clear_border
-from skimage.measure import label
-from skimage.morphology import remove_small_objects, binary_erosion, binary_dilation, binary_opening
-from skimage.measure import regionprops
-from skimage.morphology import \
-    disk  # https://scikit-image.org/docs/stable/auto_examples/numpy_operations/plot_structuring_elements.html#sphx-glr-auto-examples-numpy-operations-plot-structuring-elements-py
-import matplotlib.pyplot as plt
-from matplotlib.backends.backend_agg import FigureCanvasAgg
-from matplotlib.figure import Figure
-import matplotlib.patches as patches
-import sys
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+import tkinter as tk
+from tkinter import *
+from tkinter import filedialog
+from tkinter.ttk import *
+
 import matplotlib
+import skimage
+from skimage import segmentation
+from skimage.segmentation import expand_labels
+from PIL import ImageTk, Image
+from matplotlib.backends.backend_agg import FigureCanvasAgg
+
+from src.model.composite_contour import CompositeContour
+
 matplotlib.use('Agg')
-from measure_shape import *
-sys.path.insert(0, os.path.abspath('C:/Users/20023951/Documents/PhD/JNotebooks/Binarisation/'))
-from ZirconSeparationUtils import *
-from pyefd import elliptic_fourier_descriptors
-from pyefd import reconstruct_contour as rc
-import pyefd
+from src.model.measure_shape import *
+from src.model.ZirconSeparationUtils import *
 
 
 class Application:
@@ -44,58 +26,60 @@ class Application:
         master.geometry('1600x3000')
 
         self.mainMenu = Menu(self.master)
-
         self.fileMenu = Menu(self.mainMenu, tearoff=0)
-        self.fileMenu.add_command(label="Load Images", command=lambda: self.Browse('capture'))
-        self.fileMenu.add_command(label="Next Image", command=self.NextImage)
-        self.fileMenu.add_command(label="Previous Image", command=self.PrevImage)
         self.mainMenu.add_cascade(label="File", menu=self.fileMenu)
 
         self.imagesMenu = Menu(self.mainMenu, tearoff=0)
-        self.imagesMenu.add_command(label="Ditigise Spot [s]", command=self.PointDraw)
-        self.imagesMenu.add_command(label="Digitise Spot Size [a]", command=self.RectSpotDraw)
-        self.imagesMenu.add_command(label="Mark for Deletion [d]", command=self.DupDraw)
-        self.imagesMenu.add_command(label="Grain Boundary Capture [p]", command=self.BoundaryDraw)
-        self.imagesMenu.add_command(label="Polygon Insert Point [i]", command=self.EditPolygon)
-        self.imagesMenu.add_command(label="Polygon Insert Point [m]", command=self.PointMove)
+        self.imagesMenu.add_command(label="Load Images for Spot Capture", command=lambda: self.load_files_for_spot_capture())
+        self.imagesMenu.add_command(label="Capture Analytical Spot [s]", command=self.PointDraw)
+        self.imagesMenu.add_command(label="Capture Analytical Spot Size [a]", command=self.RectSpotDraw)
+        self.imagesMenu.add_command(label="Mark Object for Deletion [d]", command=self.DupDraw)
         self.imagesMenu.add_command(label="Capture Scale [l]", command=self.DrawScale)
-        # self.imagesMenu.add_command(label = "Save Polygon", command = self.SavePolygon)
-        self.mainMenu.add_cascade(label="Digitise", menu=self.imagesMenu)
+        self.imagesMenu.add_command(label="Move to Next Image [->]", command=self.NextImage)
+        self.imagesMenu.add_command(label="Move to Previous Image [<-]", command=self.PrevImage)
+        self.imagesMenu.insert_separator(1)
+        self.imagesMenu.insert_separator(6)
+        self.mainMenu.add_cascade(label="Data Capture", menu=self.imagesMenu)
         master.config(menu=self.mainMenu)
 
         self.binariseMenu = Menu(self.mainMenu, tearoff=0)
-        self.binariseMenu.add_command(label="Load Images", command=self.browseImages)
-        self.mainMenu.add_cascade(label="Binarise", menu=self.binariseMenu)
+        self.binariseMenu.add_command(label="Load json Files", command=lambda: self.Browse('json'))
+        self.binariseMenu.add_command(label="Image Segmentation Toolbox", command=self.browseImages)
+        #self.binariseMenu.add_command(label="Grain Boundary Capture [p]", command=self.BoundaryDraw)
+        #self.binariseMenu.add_command(label="Polygon Insert Point [i]", command=self.EditPolygon)
+        #self.binariseMenu.add_command(label="Polygon Insert Point [m]", command=self.PointMove)
+        self.binariseMenu.insert_separator(1)
+        self.mainMenu.add_cascade(label="Segment Images", menu=self.binariseMenu)
         master.config(menu=self.mainMenu)
 
         # Two Frames. myFrame for the canvas, myMenuFrame for the buttons
-        self.myMenuFrame = tk.Frame(master, width=1600, height=50)
+        self.myMenuFrame = tk.Frame(master, width=1600, height=30)
         self.myMenuFrame.pack(fill='both')
         self.myFrame = tk.Frame(master, width=1600, height=3000)
         self.myFrame.pack(expand=True, fill='both')
 
         # Buttons
-        self.browseButton = Button(self.myMenuFrame, text="Load Images", command=lambda: self.Browse('capture'))
-        self.browseButton.grid(column=0, row=0, padx=5, pady=10)
+        #self.browseButton = Button(self.myMenuFrame, text="Load Images", command=lambda: self.Browse('capture'))
+        #self.browseButton.grid(column=0, row=0, padx=5, pady=10)
 
-        self.nextImageButton = Button(self.myMenuFrame, text="Next Image", command=self.NextImage)
-        self.nextImageButton.grid(column=1, row=0, padx=5, pady=10)
+        #self.nextImageButton = Button(self.myMenuFrame, text="Next Image", command=self.NextImage)
+        #self.nextImageButton.grid(column=1, row=0, padx=5, pady=10)
 
-        self.prevImageButton = Button(self.myMenuFrame, text="Previous Image", command=self.PrevImage)
-        self.prevImageButton.grid(column=2, row=0, padx=5, pady=10)
+        #self.prevImageButton = Button(self.myMenuFrame, text="Previous Image", command=self.PrevImage)
+        #self.prevImageButton.grid(column=2, row=0, padx=5, pady=10)
 
-        self.spotCaptureButton = Button(self.myMenuFrame, text="Spot Capture", command=self.PointDraw)
-        self.spotCaptureButton.grid(column=3, row=0, padx=5, pady=10)
+        #self.spotCaptureButton = Button(self.myMenuFrame, text="Spot Capture", command=self.PointDraw)
+        #self.spotCaptureButton.grid(column=3, row=0, padx=5, pady=10)
 
-        self.sizeCaptureButton = Button(self.myMenuFrame, text="Size Capture", command=self.RectSpotDraw)
-        self.sizeCaptureButton.grid(column=4, row=0, padx=5, pady=10)
+        #self.sizeCaptureButton = Button(self.myMenuFrame, text="Size Capture", command=self.RectSpotDraw)
+        #self.sizeCaptureButton.grid(column=4, row=0, padx=5, pady=10)
 
-        self.duplicateCaptureButton = Button(self.myMenuFrame, text="Mark Duplicate", command=self.DupDraw)
-        self.duplicateCaptureButton.grid(column=5, row=0, padx=5, pady=10)
+        #self.duplicateCaptureButton = Button(self.myMenuFrame, text="Mark Duplicate", command=self.DupDraw)
+        #self.duplicateCaptureButton.grid(column=5, row=0, padx=5, pady=10)
 
         # Image name, so  we know which image we're working on
         self.label = Label(self.myMenuFrame, text='')
-        self.label.grid(column=6, row=0, padx=5, pady=10)
+        self.label.grid(column=1, row=0, padx=5, pady=10)
 
         self.myCanvas = Canvas(self.myFrame, bg="white")
         self.vScroll = Scrollbar(self.myFrame, orient='vertical', command=self.myCanvas.yview)
@@ -108,6 +92,11 @@ class Application:
         self.myCanvas.pack(side=LEFT, expand=True, fill=BOTH)
 
         # variables
+        self.json_folder_path = tk.StringVar()
+        self.last_contour_deleted={} #this dictionary will hold the last contour deleted, incase of an undo
+        self.text_label = '' #label for duplicate grains and spot scales
+        self.json_folder_location = None #where json files are stored.
+        self.Current_Image = 'TL' #tracks which image type is displayed
         self.new_boundary = None # when a polygon is manually draw, it is saved to this variable.
         self.contourList = {}      #a list of all the contours to turn into  binary masks
         self.maskPath = ''
@@ -119,7 +108,7 @@ class Application:
         self.case = ''  # the function of the browse button. I.e. browse for capture, RL or TL
         self.folderPath = ''
         self.img = None
-        self.imgIterCurrent = None
+        self.image_iterator_current = None
         self.currentSpotNumber = tk.StringVar()
         self.spotPointCount = 0
         self.x0 = None
@@ -132,9 +121,9 @@ class Application:
         self.jsonList = []
         self.uniqueTag = None
         self.groupTag = None
-        self.uniqueSampleNumbers = set()
-        self.imageSet = set()
-        self.errorMessage = ''
+        self.unique_sample_numbers = {} #a dictionary of all samples numbers of all images loaded for spot capture. Contains unique sample numbers only. Records spots per sample.
+        self.sampleList = [] #a list of all sample numbers of all images loaded for spot capture. May contain duplicates.
+        self.error_message_text = ''
         self.currentSample = None
         self.rectangleType = None
         self.boundaryPoints = []  # This MUST be cleared every time the polygon is saved
@@ -143,7 +132,6 @@ class Application:
         self.coordID = []  # List of coordinate ID's for the polygon currently active. This MUST be set back to [] every time the polygon is saved
         self.Move = False  # Whether or not a move action can take place. Records true/false if an existing entity was selected
         self.allPolys = {}  # ID-coordinate dictionary of all polygons on the page
-        self.sampleList = []
         self.lineStart_y = None  # used for drawing a scale line
         self.lineStart_x = None  # used for drawing a scale line
         self.updatedX = None
@@ -192,7 +180,7 @@ class Application:
         self.Type = 'SCALE'
 
     def LineDraw(self, moveEvent):
-        self.myCanvas.unbind("<ButtonPress-1>")
+        #self.myCanvas.unbind("<ButtonPress-1>")
         self.updatedX = self.myCanvas.canvasx(moveEvent.x)
         self.updatedY = self.myCanvas.canvasy(moveEvent.y)
         self.myCanvas.coords(self.scaleLine, self.lineStart_x, self.lineStart_y, self.updatedX, self.updatedY)
@@ -215,7 +203,7 @@ class Application:
             result = self.DisplayImages()
 
     def DupDraw(self):
-        self.rectangleType = 'Duplicate'
+        self.rectangleType = 'DUPLICATE'
         self.RectDraw()
 
     def BoundaryDraw(self):
@@ -324,7 +312,7 @@ class Application:
         self.myCanvas.unbind("<B1-Motion>")
         self.myCanvas.unbind("<ButtonRelease-1>")
 
-        fileLocation = 'C:/Users/20023951/Documents/PhD/GSWA/Geochem_Interrogate/Inv1_Files'
+        fileLocation = 'C:/Users/20023951/Documents/PhD/GSWA/Geochem_Interrogate/t2_inv1_files'
         for path, folder, files in os.walk(fileLocation):
             for name in files:
                 if name == self.jsonName:  # find the json file that relates to the pdf page (image) under consideration
@@ -392,16 +380,16 @@ class Application:
             self.allPolys[self.groupTag] = coordList
             self.PointMove()
         else:
-            self.errorMessage = 'Select a polygon to edit'
-            self.ErrorMessage()
+            self.error_message_text = 'Select a polygon to edit'
+            self.open_error_message_popup_window()
     def InsertPoint(self):
         self.myCanvas.unbind("<Button-1>")
         self.myCanvas.bind("<Button-1>", self.StartInsertPoint)
 
     def StartInsertPoint(self, addEvent):
         if self.uniqueTag == None:
-            self.errorMessage = 'Select a polygon to edit'
-            self.ErrorMessage()
+            self.error_message_text = 'Select a polygon to edit'
+            self.open_error_message_popup_window()
             return
         delta_x = None  # used to calculate displacement
         delta_y = None  # used to calculate displacement
@@ -500,7 +488,7 @@ class Application:
         width = abs(max(x_list) - min(x_list))
         boundingBox = {"height": height, "width": width, "left": left, "top": top}
 
-        with open(os.path.join(self.folderPath, self.imgIterCurrent[0]), errors='ignore') as jsonFile:
+        with open(os.path.join(self.folderPath, self.image_iterator_current[0]), errors='ignore') as jsonFile:
             data = json.load(jsonFile)
             anyMatch = False
             for region in data['regions']:
@@ -513,13 +501,13 @@ class Application:
                                  "points": polyCoords}
                     data['regions'].append(newRegion)
 
-        with open(os.path.join(self.folderPath, self.imgIterCurrent[0]), 'w', errors='ignore') as updatedFile:
+        with open(os.path.join(self.folderPath, self.image_iterator_current[0]), 'w', errors='ignore') as updatedFile:
             json.dump(data, updatedFile, indent=4)
         self.uniqueTag = None
         self.groupTag = None
 
     def RectSpotDraw(self):
-        self.rectangleType = 'Spot'
+        self.rectangleType = 'SPOT AREA'
         self.RectDraw()
 
     def RectDraw(self):
@@ -532,14 +520,16 @@ class Application:
         groupSuffix = ''
         uniqueSuffix = ''
         colour = ''
-        if self.rectangleType == 'Duplicate':
+        if self.rectangleType == 'DUPLICATE':
             groupSuffix = 'NewDup'
             uniqueSuffix = 'dupRect'
             colour = 'red'
-        if self.rectangleType == 'Spot':
+            self.text_label = "Duplicate"
+        if self.rectangleType == 'SPOT AREA':
             groupSuffix = 'NewSpot'
             uniqueSuffix = 'spotRect'
             colour = 'blue'
+            self.text_label="spot area"
 
         self.spotPointCount += 1
         self.groupTag = groupSuffix + str(self.spotPointCount)
@@ -560,17 +550,29 @@ class Application:
 
     def RectFinalCoords(self, event):
         colour = ''
-        if self.rectangleType == 'Duplicate':
+        if self.rectangleType == 'DUPLICATE':
             colour = 'red'
-        if self.rectangleType == 'Spot':
+        if self.rectangleType == 'SPOT AREA':
             colour = 'blue'
 
-        self.myCanvas.create_text(self.rectStart_x, self.rectStart_y - 15, text=self.uniqueTag, fill=colour,
-                                  font=("Helvetica", 12, "bold"), tags=self.groupTag)
-        if self.rectangleType == 'Spot':
-            self.onClickCreate()
-        if self.rectangleType == 'Duplicate':
+        self.myCanvas.create_text(self.rectStart_x, self.rectStart_y - 15, text=self.text_label, fill=colour,font=("Helvetica", 12, "bold"), tags=self.groupTag)
+        self.text_label=''
+        if self.rectangleType == 'SPOT AREA':
+            #self.onClickCreate()
             self.Save()
+        if self.rectangleType == 'DUPLICATE':
+            self.Save()
+
+    def undo_delete_contour(self):
+        dict_key = list(self.last_contour_deleted.keys())[0]
+        self.contourList[dict_key] = self.last_contour_deleted[dict_key]
+        self.last_contour_deleted.clear()
+        if self.Current_Image== 'TL':
+            self.Load_Image(1)
+        elif self.Current_Image == 'RL':
+            self.Load_Image(0)
+
+
 
     def DeleteObject(self, event):
         thisObj = event.widget.find_withtag('current')[0]  # get the object clicked on
@@ -585,20 +587,25 @@ class Application:
                 self.pairsList.remove([(x1,y1),(x2,y2)])
                 self.myCanvas.delete(thisObjID)  # delete everything with the same groupID
             elif 'contour_' in thisObjID:
+                self.last_contour_deleted.clear()  # only keeps the last contour deleted
+                self.last_contour_deleted[thisObjID] = self.contourList[thisObjID]  # store the last contour to be deleted
                 del self.contourList[thisObjID]
                 self.myCanvas.delete(thisObjID)
             elif 'extcont_' in thisObjID:
                 contour_coords = self.contourList[thisObjID]
                 polygon = Polygon(contour_coords)  # create a shapely polygon
                 representative_point = polygon.representative_point()  # using the shapely polygon, get a point inside the polygon
-                label = self.threshold[int(representative_point.y),int(representative_point.x)]
-                if int(label)!=0:
-                    self.threshold[self.threshold==label]=0
+                self.threshold = label(self.threshold, background=0, connectivity=None).astype('uint8')
+                blob_label = self.threshold[int(representative_point.y),int(representative_point.x)]
+                if int(blob_label)!=0:
+                    self.threshold[self.threshold==blob_label]=0
+                self.last_contour_deleted.clear() #only keeps the last contour deleted
+                self.last_contour_deleted[thisObjID] = self.contourList[thisObjID] #store the last contour to be deleted
                 del self.contourList[thisObjID]
                 self.myCanvas.delete(thisObjID)
             else:
                 self.myCanvas.delete(thisObjID)  # delete everything with the same groupID
-                with open(os.path.join(self.folderPath, self.imgIterCurrent[0]),
+                with open(os.path.join(self.folderPath, self.image_iterator_current[0]),
                           errors='ignore') as jsonFile:  # open the json file for the image
                     data = json.load(jsonFile)
 
@@ -607,11 +614,11 @@ class Application:
                         data['regions'].pop(i)  # get rid of it. Don't read further (affects incrementor?)
                         # print('Already exists in file')
                         break
-                with open(os.path.join(self.folderPath, self.imgIterCurrent[0]), 'w', errors='ignore') as updatedFile:
+                with open(os.path.join(self.folderPath, self.image_iterator_current[0]), 'w', errors='ignore') as updatedFile:
                     json.dump(data, updatedFile, indent=4)  # rewrite the json without the object
                     # print('removed from json')
                 try:
-                    self.uniqueSampleNumbers[self.currentSample].discard(thisObjID)
+                    self.unique_sample_numbers[self.currentSample].discard(thisObjID)
                 except:
                     pass
         else:
@@ -650,34 +657,39 @@ class Application:
 
     def Browse(self, case):
         test = np.zeros((5, 5))
-        if case == 'RL':
+        if case == 'RL': #if browing for an RL image in the binarise menu
             filename = filedialog.askopenfilename(filetypes=[("all files", "*.*")])
             self.RLPath.set(filename)
             self.RLTextBox.delete(0, END)
             self.RLTextBox.insert(0, filename)
-        elif case == 'TL':
+        elif case == 'TL': #if browsing for a TL image in the binarise menu
             filename = filedialog.askopenfilename(filetypes=[("all files", "*.*")])
             self.TLPath.set(filename)
             self.TLTextBox.delete(0, END)
             self.TLTextBox.insert(0, filename)
 
-        elif case == 'Mask':
+        elif case == 'Mask': #if browsing for a mask image in the binarise menu
             folderName = filedialog.askdirectory()
-            self.MaskLocation.set(folderName)
+            self.MaskFolderLocation.set(folderName)
             self.MaskTextBox.delete(0, END)
             self.MaskTextBox.insert(0, folderName)
 
-        elif case == 'Folder':
+        elif case == 'Folder': #if browsing for a folder
             folderName = filedialog.askdirectory()
             self.Folder_Location.set(folderName)
             self.Folder_TextBox.delete(0, END)
             self.Folder_TextBox.insert(0, folderName)
-
-        elif case == 'capture':
+        elif case == 'json':
+            json_folder_name = filedialog.askdirectory()
+            self.json_folder_location = json_folder_name
+            self.json_folder_path.set(json_folder_name)
+        elif case == 'capture': #if browsing for a folder of images for spot capture
             filename = filedialog.askdirectory()
             self.folderPath = filename
-            self.GetImageInfo()
-            self.DisplayImages()
+            self.image_folder_path.set(filename)
+            if self.load_json_folder.get() == 0:
+                self.json_folder_path.set(self.image_folder_path.get())
+
         elif case == 'File':
             filename = filedialog.askopenfilename(filetypes=[("all files", "*.*")])
             self.File_Location.set(filename)
@@ -686,44 +698,135 @@ class Application:
         else:
             print('Browse error. No case')
 
+    def check_for_images_and_jsons(self):
+        has_images = False
+        missing_json_files = []
+        for path, folders, files in os.walk(self.folderPath):
+            for name in files:
+                if os.path.splitext(name)[1] == '.png': #check for images
+                    has_images = True
+                    json_file = os.path.splitext(name)[0]+'.json'
+                    has_json = self.does_json_exist(os.path.join(self.folderPath,json_file))
+                    if not has_json:
+                        missing_json_files.append(name)
+        return has_images, missing_json_files
+
+    def does_json_exist(self, json_file):
+        return os.path.exists(json_file)
+
+    def ok_cancel_create_json_files(self, list_of_json_files_to_create):
+        self.ok_cancel_json_window = Toplevel(root)
+        self.ok_cancel_json_window.title("Create missing json Files")
+        self.ok_cancel_json_window.minsize(400,100)
+
+        self.ok_cancel_json_text = Label(self.ok_cancel_json_window, text = "Json files are missing. Do you want to create them?")
+        self.ok_cancel_json_text.grid(column = 0, row = 0)
+
+        self.ok_create_jsons = Button(self.ok_cancel_json_window, text="OK", width=5,command=lambda: self.close_popup_window_and_create_jsons(self.ok_cancel_json_window,list_of_json_files_to_create))
+        self.ok_create_jsons.grid(column=1, row=1, padx=2, pady=5)
+
+        self.cancel_create_jsons = Button(self.ok_cancel_json_window, text="Cancel", width=8,command=lambda: self.close_window(self.ok_cancel_json_window))
+        self.ok_create_jsons.grid(column=2, row=1, padx=2, pady=5)
+
+    def close_popup_window_and_create_jsons(self,window, json_files_to_create):
+        self.close_window(window)
+        for file_name in json_files_to_create:
+            self.write_json_file(file_name)
+
+    def write_json_file(self,file):
+        file_extension = os.path.splitext(file)[-1]
+        path  = os.path.join(self.image_folder_path.get(),file)
+        img = cv2.imread(path)[:,:,0]
+        json_name = os.path.splitext(file)[0]+".json"
+        data = {"asset": {
+                    "format": file_extension,
+                    "id": self.create_hash(file),
+                    "name": file,
+                    "path": path,
+                    "size": {
+                            "width":img.shape[1],
+                            "height":img.shape[0]
+                            },
+
+                    },
+                "regions":[]
+               }
+
+        with open(os.path.join(self.image_folder_path.get(),json_name), 'w', errors='ignore') as new_json:
+            json.dump(data, new_json, indent=4)
+
+
+    def create_hash(self,item_to_hash):
+        hash_code = hash(item_to_hash)
+        return hash_code
+
     def GetImageInfo(self):
+        #Does 3 things:
+        # Check for images in the folder, returns error message if there are none.
+        #checks if each image has a corresponding json file. Offers to create the ones that are missing.
+        #loads the images for spot capture
+        self.jsonList = []
+
+        has_images,missing_json_files = self.check_for_images_and_jsons()
+
+        if has_images == False:
+            self.error_message_text = "The folder contains no images for data capture."
+            self.open_error_message_popup_window()
+            return
+
+        if missing_json_files:
+            if self.create_json_var.get() == 1:
+                for file in missing_json_files:
+                    self.write_json_file(file)
+            else:
+                self.ok_cancel_create_json_files(missing_json_files)
+
+        # Get a list of unique sample ID's and the spots associated with them.
         for path, folders, files in os.walk(self.folderPath):
             for name in files:
                 if os.path.splitext(name)[1] == '.json':
                     with open(os.path.join(self.folderPath, name), errors='ignore') as jsonFile:
                         data = json.load(jsonFile)
                     if not name in self.jsonList:
-                        self.jsonList.append([name, data['asset']['name']])
-                        pattern = r"_p[0-9]{1,2}.png"
-                        sample = re.sub(pattern, "", data['asset']['name'])
-                        self.imageSet.add(sample)
-        self.uniqueSampleNumbers = {i: set() for i in self.imageSet}
+                        self.jsonList.append([name, data['asset']['name']]) #add the image name to the list of json files, as jsons and images have same name
+                        sampleID = data['asset']['name'].split("_")[0]
+                        if sampleID not in self.unique_sample_numbers:#create a dictionary with unique sample numbers only
+                            self.unique_sample_numbers[sampleID]=set()
+                            self.sampleList.append(sampleID)
+                            for region in data['regions']: #everytime we find a json with a unique sample number, don't forget to get the spots listed in that json
+                                self.unique_sample_numbers[sampleID].add(region['id'])
+                        else: #you might find jsons with existing sample numbers. They may also contains spots, record those spots.
+                            for region in data['regions']:
+                                self.unique_sample_numbers[sampleID].add(region['id'])
+
+        self.sampleList.sort()
+        #self.uniqueSampleNumbers = {i: set() for i in self.list_of_sample_numbers} #this makes a set of the sample numbers, i.e. keeping unique sample numbers only, no duplicates
 
         # This is likely inefficient. First I  looped through to get all unique image ID's and create a dictionary. Then I loop through to add all sample ID's to the dictionary
-        for path, folders, files in os.walk(self.folderPath):
-            for name in files:
-                if os.path.splitext(name)[1] == '.json':
-                    with open(os.path.join(self.folderPath, name), errors='ignore') as jsonFile:
-                        data = json.load(jsonFile)
-                    pattern = r"_p[0-9]{1,2}.png"
-                    sample = re.sub(pattern, "", data['asset']['name'])
-                    for region in data['regions']:
-                        if region['tags'][0] == 'SPOT':
-                            self.uniqueSampleNumbers[sample].add(region['id'])
-        self.sampleList = list(self.imageSet)
-        self.sampleList.sort()
+       # for path, folders, files in os.walk(self.folderPath):
+        #    for name in files:
+         #       if os.path.splitext(name)[1] == '.json':
+          #          with open(os.path.join(self.folderPath, name), errors='ignore') as jsonFile:
+           #             data = json.load(jsonFile)
+            #        pattern = r"_p[0-9]{1,2}.png"
+             #       sample = re.sub(pattern, "", data['asset']['name'])
+              #      for region in data['regions']:
+               #         if region['tags'][0] == 'SPOT':
+                #            self.uniqueSampleNumbers[sample].add(region['id'])
+        #self.sampleList = list(self.list_of_sample_numbers)
 
-    def ErrorMessage(self):
+
+    def open_error_message_popup_window(self):
         self.errorMessageWindow = Toplevel(root)
-        self.errorMessageWindow.title("Capture Error")
+        self.errorMessageWindow.title("Error")
         self.errorMessageWindow.minsize(300, 100)
-        self.errorLabel = Label(self.errorMessageWindow, text=self.errorMessage)
+        self.errorLabel = Label(self.errorMessageWindow, text=self.error_message_text)
         self.errorLabel.grid(column=0, row=0)
 
     def Save(self):
-        # print('Saving')
-        if self.rectangleType == 'Duplicate':
-            with open(os.path.join(self.folderPath, self.imgIterCurrent[0]), errors='ignore') as jsonFile:
+        #if self.rectangleType == 'Duplicate':
+        if self.Type == 'RECTANGLE':
+            with open(os.path.join(self.folderPath, self.image_iterator_current[0]), errors='ignore') as jsonFile:
                 data = json.load(jsonFile)
             height = abs(self.rectStart_y - self.updatedY)
             width = abs(self.rectStart_x - self.updatedX)
@@ -742,13 +845,14 @@ class Application:
                 top = self.updatedY
                 bottom = self.rectStart_y
 
-            newRegion = {"id": self.uniqueTag, "type": self.Type, "tags": ["DUPLICATE"],
+            #Region = {"id": self.uniqueTag, "type": self.Type, "tags": ["DUPLICATE"],
+            newRegion = {"id": self.uniqueTag, "type": self.Type, "tags": [self.rectangleType],
                          "boundingBox": {"height": height, "width": width, "left": left, "top": top},
                          "points": [{"x": left, "y": top}, {"x": right, "y": top}, {"x": right, "y": bottom},
                                     {"x": left, "y": bottom}]}
             data['regions'].append(newRegion)
 
-            with open(os.path.join(self.folderPath, self.imgIterCurrent[0]), 'w', errors='ignore') as updatedFile:
+            with open(os.path.join(self.folderPath, self.image_iterator_current[0]), 'w', errors='ignore') as updatedFile:
                 json.dump(data, updatedFile, indent=4)
             return None
 
@@ -777,40 +881,38 @@ class Application:
                 top = self.updatedY
                 bottom = self.lineStart_y
 
-            with open(os.path.join(self.folderPath, self.imgIterCurrent[0]), errors='ignore') as jsonFile:
+            with open(os.path.join(self.folderPath, self.image_iterator_current[0]), errors='ignore') as jsonFile:
                 data = json.load(jsonFile)
                 newRegion = {"id": self.uniqueTag, "type": self.Type, "tags": ["SCALE"],
                              "boundingBox": {"height": height, "width": width, "left": left, "top": top},
                              "points": [{"x": self.lineStart_x, "y": self.lineStart_y},
                                         {"x": self.updatedX, "y": self.updatedY}]}
                 data['regions'].append(newRegion)
-            with open(os.path.join(self.folderPath, self.imgIterCurrent[0]), 'w', errors='ignore') as updatedFile:
+            with open(os.path.join(self.folderPath, self.image_iterator_current[0]), 'w', errors='ignore') as updatedFile:
                 json.dump(data, updatedFile, indent=4)
 
-            #print(newRegion)
             self.scaleLine = None
             return None
 
         spotNo = self.currentSpotNumber.get()
         userText = spotNo.strip()
-        #print('userText:', userText)
-        #print('self.currentSample: ', self.currentSample)
+
         try:
             testNum = float(userText)
         except:
-            self.errorMessage = "Non-numeric spot number"
-            self.ErrorMessage()
+            self.error_message_text = "Non-numeric spot number"
+            self.open_error_message_popup_window()
             return None
-        if userText in self.uniqueSampleNumbers[self.currentSample]:
-            self.errorMessage = 'Spot number already captured for PDF: ' + str(self.currentSample)
-            self.ErrorMessage()
+        if userText in self.unique_sample_numbers[self.currentSample]:
+            self.error_message_text = 'Spot number already captured for PDF: ' + str(self.currentSample)
+            self.open_error_message_popup_window()
             return None
         if userText.isdecimal():
-            self.errorMessage = 'Integers are not permitted'
-            self.ErrorMessage()
+            self.error_message_text = 'Integers are not permitted'
+            self.open_error_message_popup_window()
             return None
         else:
-            self.uniqueSampleNumbers[self.currentSample].add(userText)
+            self.unique_sample_numbers[self.currentSample].add(userText)
         height = 0
         width = 0
         left = 0
@@ -818,7 +920,7 @@ class Application:
         top = 0
         bottom = 0
 
-        with open(os.path.join(self.folderPath, self.imgIterCurrent[0]), errors='ignore') as jsonFile:
+        with open(os.path.join(self.folderPath, self.image_iterator_current[0]), errors='ignore') as jsonFile:
             data = json.load(jsonFile)
             anyMatch = False
             for region in data['regions']:  # If the spot already exists in the jSON
@@ -856,7 +958,7 @@ class Application:
                                         {"x": left, "y": bottom}]}
                 data['regions'].append(newRegion)
 
-        with open(os.path.join(self.folderPath, self.imgIterCurrent[0]), 'w', errors='ignore') as updatedFile:
+        with open(os.path.join(self.folderPath, self.image_iterator_current[0]), 'w', errors='ignore') as updatedFile:
             json.dump(data, updatedFile, indent=4)
 
         self.myCanvas.itemconfig(self.labelID, text=userText, state=tk.NORMAL, tags=userText)
@@ -885,6 +987,73 @@ class Application:
         self.spotCaptureWindow.bind('<Return>', lambda e: self.Save())
         self.saveSpotNo.grid(column=0, row=1, pady=5)
 
+    def load_files_for_spot_capture(self):
+        self.browse_for_files_window = Toplevel(root)
+        self.browse_for_files_window.title("Select Images for Spot Capture")
+        self.browse_for_files_window.minsize(400,100)
+
+        #browse for images
+        self.image_folder_Label = Label(self.browse_for_files_window, text="Image Folder")
+        self.image_folder_Label.grid(column=0, row=0)
+        self.image_folder_path = tk.StringVar()
+        self.image_folder_path.set('')
+        self.image_folder_text_box = Entry(self.browse_for_files_window, width=150, textvariable=self.image_folder_path)
+        self.image_folder_text_box.grid(column=1, row=0)
+        self.browse_for_image_folder = Button(self.browse_for_files_window, text="...", width=5, command=lambda: self.Browse('capture'))
+        self.browse_for_image_folder.grid(column=2, row=0, padx=2, pady=5)
+
+        #browse for json files
+        self.json_folder_Label = Label(self.browse_for_files_window, text="Json Folder")
+        self.json_folder_Label.config(state=DISABLED)
+        self.json_folder_Label.grid(column=0, row=2)
+        self.json_folder_path = tk.StringVar()
+        self.json_folder_path.set('')
+
+        self.json_folder_text_box = Entry(self.browse_for_files_window, width=150, textvariable=self.json_folder_path)
+        self.json_folder_text_box.config(state=DISABLED)
+        self.json_folder_text_box.grid(column=1, row=2)
+
+        self.browse_for_json_folder = Button(self.browse_for_files_window, text="...", width=5,command=lambda: self.Browse('json'))
+        self.browse_for_json_folder.config(state=DISABLED)
+        self.browse_for_json_folder.grid(column=2, row=2, padx=2, pady=5)
+
+        self.create_json_var = IntVar()
+        self.create_json_files_check_button = Checkbutton(self.browse_for_files_window,text='Generate json files if missing',variable=self.create_json_var)
+        self.create_json_files_check_button.grid(column=0, row=3, padx=2, pady=5)
+
+        self.load_json_folder = IntVar()
+        self.load_json_folder_check_button = Checkbutton(self.browse_for_files_window, text='load jsons separately',variable=self.load_json_folder,command=lambda: self.activate_browse_for_json_folder())
+        self.load_json_folder_check_button.grid(column=1, row=3, padx=2, pady=5)
+
+        self.ok_load_files_for_capture = Button(self.browse_for_files_window, text="OK", width=5,command=lambda: self.load_files())
+        self.ok_load_files_for_capture.grid(column=0, row=4, padx=2, pady=5)
+
+        self.cancel_load_files_for_capture = Button(self.browse_for_files_window, text="Cancel", width=8,command=lambda: self.close_window(self.browse_for_files_window))
+        self.cancel_load_files_for_capture.grid(column=1, row=4, padx=2, pady=5)
+
+
+    def close_window(self,window):
+            window.destroy()
+
+    def load_files(self):
+        self.GetImageInfo()
+        self.DisplayImages()
+        self.close_window(self.browse_for_files_window)
+
+    def activate_browse_for_json_folder(self):
+        if self.load_json_folder.get()==1:
+            self.json_folder_Label.config(state=NORMAL)
+            self.json_folder_text_box.config(state=NORMAL)
+            self.browse_for_json_folder.config(state = NORMAL)
+            self.json_folder_path.set("")
+
+        elif self.load_json_folder.get()==0:
+            self.json_folder_Label.config(state=DISABLED)
+            self.json_folder_text_box.config(state=DISABLED)
+            self.browse_for_json_folder.config(state=DISABLED)
+            self.json_folder_path.set(self.image_folder_path.get())
+
+
     def browseImages(self):
         self.browseImagesWindow = Toplevel(root)
         self.browseImagesWindow.title("Select Images to Binarise")
@@ -895,31 +1064,36 @@ class Application:
         self.RL_Label.grid(column=0, row=0)
         self.RLPath = tk.StringVar()
         self.RLPath.set('')
-        self.RLTextBox = Entry(self.browseImagesWindow, width=100, textvariable=self.RLPath)
+        self.RLTextBox = Entry(self.browseImagesWindow, width=150, textvariable=self.RLPath)
         self.RLTextBox.grid(column=1, row=0)
         self.browseRL = Button(self.browseImagesWindow, text="...", width=5, command=lambda: self.Browse('RL'))
         self.browseRL.grid(column=3, row=0, padx=2, pady=5)
         self.rlVar = IntVar()
         self.rlCheckButton = Checkbutton(self.browseImagesWindow, text= 'Binarise  RL',variable=self.rlVar)
         self.rlCheckButton.grid(column=4, row=0, padx=2, pady=5)
+        self.Display_RL_Image_Button = Button(self.browseImagesWindow, text="Display", width=8, command=lambda: self.Load_Image(0))
+        self.Display_RL_Image_Button.grid(column=5, row=0, padx=2, pady=5)
 
         self.TL_Label = Label(self.browseImagesWindow, text="TL Image")
         self.TL_Label.grid(column=0, row=1)
         self.TLPath = tk.StringVar()
         self.TLPath.set('')
-        self.TLTextBox = Entry(self.browseImagesWindow, width=100, textvariable=self.TLPath)
+        self.TLTextBox = Entry(self.browseImagesWindow, width=150, textvariable=self.TLPath)
         self.TLTextBox.grid(column=1, row=1)
         self.browseTL = Button(self.browseImagesWindow, text="...", width=5, command=lambda: self.Browse('TL'))
         self.browseTL.grid(column=3, row=1, padx=2, pady=5)
         self.tlVar = IntVar()
         self.tlCheckButton = Checkbutton(self.browseImagesWindow, text='Binarise  TL', variable=self.tlVar)
         self.tlCheckButton.grid(column=4, row=1, padx=2, pady=5)
+        self.Display_TL_Image_Button = Button(self.browseImagesWindow, text="Display", width=8,
+                                              command=lambda: self.Load_Image(1))
+        self.Display_TL_Image_Button.grid(column=5, row=1, padx=2, pady=5)
 
         self.Mask_Label = Label(self.browseImagesWindow, text="Mask Save Location")
         self.Mask_Label.grid(column=0, row=2)
-        self.MaskLocation = tk.StringVar()
-        self.MaskLocation.set('')
-        self.MaskTextBox = Entry(self.browseImagesWindow, width=100, textvariable=self.MaskLocation)
+        self.MaskFolderLocation = tk.StringVar()
+        self.MaskFolderLocation.set('')
+        self.MaskTextBox = Entry(self.browseImagesWindow, width=100, textvariable=self.MaskFolderLocation)
         self.MaskTextBox.grid(column=1, row=2)
         self.browseMask = Button(self.browseImagesWindow, text="...",width = 5, command=lambda: self.Browse('Mask'))
         self.browseMask.grid(column=3, row=2, padx=2, pady=5)
@@ -949,10 +1123,10 @@ class Application:
         self.Process_Folder = Button(self.browseImagesWindow, text="Process Folder", width=15,command=lambda: self.ProcessFolder())
         self.Process_Folder.grid(column=4, row=4, padx=3, pady=5)
 
-        self.Binarise = Button(self.browseImagesWindow, text="Binarise", command=self.binariseImages)
-        self.Binarise.grid(column=0, row=5,padx=2, pady=5)
-        self.Separate = Button(self.browseImagesWindow, text="Separate Grains", command=self.Separate)
-        self.Separate.grid(column=0, row=6,padx=2, pady=5)
+        self.BinariseButton = Button(self.browseImagesWindow, text="Binarise", command=self.binariseImages)
+        self.BinariseButton.grid(column=0, row=5, padx=2, pady=5)
+        self.SeparateButton = Button(self.browseImagesWindow, text="Separate Grains", command=self.Separate)
+        self.SeparateButton.grid(column=0, row=6, padx=2, pady=5)
         self.breakLine = Button(self.browseImagesWindow, text="Draw Break Line", command=self.DrawBreakLine)
         self.breakLine.grid(column=0, row=7, padx=2, pady=5)
         self.saveChanges = Button(self.browseImagesWindow, text="Save Changes", command=self.SaveBreakChanges)
@@ -963,11 +1137,16 @@ class Application:
         self.pushDB.grid(column=0, row=10, padx=2, pady=5)
         self.moveSpot = Button(self.browseImagesWindow, text="Reposition spot", command=self.PointMove)
         self.moveSpot.grid(column=0, row=11, padx=2, pady=5)
+        self.grain_boundary_capture = Button(self.browseImagesWindow, text ="Grain Boundary Capture [p]", command=self.BoundaryDraw)
+        self.grain_boundary_capture.grid(column=0, row=12, padx=2, pady=5)
 
         #self.insertPolygonPoint = Button(self.browseImagesWindow, text="insert Point", command=self.EditPolygon)
         #self.insertPolygonPoint.grid(column=0, row=8, padx=2, pady=5)
         #self.deletePolygonPoint = Button(self.browseImagesWindow, text="delete Point", command=self.EditPolygon)
         #self.deletePolygonPoint.grid(column=0, row=9, padx=2, pady=5)
+
+        self.undo_delete = Button(self.browseImagesWindow, text="Undo Delete Contour", command=self.undo_delete_contour)
+        self.undo_delete.grid(column=0, row=13, padx=2, pady=5)
 
     def ProcessFolder(self):
         self.ProcessFolderFlag = True
@@ -983,11 +1162,42 @@ class Application:
         print('Processing complete')
 
     def DisplayMask(self):
-        if self.File_Location.get() != '':
+        path = self.File_Location.get()
+        rl_path = ''
+        tl_path = ''
+        if path != '':
             self.threshold = cv2.imread(self.File_Location.get())[:, :, 0]
+            self.threshold[self.threshold > 0] = 255
+           # self.threshold = label(self.threshold,background=0, connectivity=None).astype('uint8')
+            #labelim = label(image_open, background=0, connectivity=None)
+            #self.threshold = labelim.astype('uint8')
+            jsonName = '_'.join(path.split('/')[-1].split('_')[:3])+'.json'
+            sampleid = jsonName.split('_')[0]
+            t_regionID = path.split('/')[-1].split('_')
+            regionID = '_'.join(t_regionID[4:]).replace('.png', '')
+
+            if self.json_folder_location is None:
+                self.error_message_text = "JSON file location has not been defined"
+                self.open_error_message_popup_window()
+                return
+            else:
+                with open(os.path.join(self.json_folder_location,jsonName), errors='ignore') as jsonFile:
+                    data = json.load(jsonFile)
+                for region in data["regions"]:
+                    if region["id"] == regionID:
+                        rl_path = region["RL_Path"] if "RL_Path" in region else self.RLPath.get()
+                        tl_path = region["TL_Path"] if "TL_Path" in region else self.TLPath.get()
+                        mask_path = region["Mask_Path"].split('\\')[0] if "Mask_Path" in region else self.MaskFolderLocation.get()
+                self.RLTextBox.delete(0, END)
+                self.RLTextBox.insert(0, rl_path)
+                self.TLTextBox.delete(0, END)
+                self.TLTextBox.insert(0, tl_path)
+                self.MaskTextBox.delete(0, END)
+                self.MaskTextBox.insert(0, mask_path)
+
         elif self.ProcessFolderFlag == True:
             self.threshold = cv2.imread(self.currentMask)[:, :, 0]
-        self.threshold[self.threshold > 0] = 255
+
         image_pill = Image.fromarray(self.threshold)
         self.img = ImageTk.PhotoImage(image=image_pill)
         self.myCanvas.delete('all')
@@ -1020,8 +1230,8 @@ class Application:
         colArray = 'sampleid, image_id, grain_number,grain_centroid, grain_spots, area, equivalent_diameter, perimeter, minor_axis_length,major_axis_length, solidity, convex_area, formFactor,roundness, compactness, aspectRatio, minFeret, maxFeret, contour, image_dimensions,mask_image'
         cursor = connection.cursor()
         if self.jsonName == '':
-            self.errorMessage = 'Shapes have not been measured'
-            self.ErrorMessage()
+            self.error_message_text = 'Shapes have not been measured'
+            self.open_error_message_popup_window()
             return
         elif self.File_Location.get() != '':
             maskName = self.File_Location.get().split('/')[-1]
@@ -1066,19 +1276,43 @@ class Application:
     def SaveMask(self):
         fileRL = self.RLPath.get()
         fileTL = self.TLPath.get()
-        maskPath = self.MaskLocation.get()
+        maskPath = self.MaskFolderLocation.get()
         self.threshold[self.threshold>0]=255
-        #unique = np.unique(self.threshold)
         fig = plt.figure(figsize=(15, 15), dpi=100)
         ax = fig.add_axes([0, 0, 1, 1])
-        #plt.imshow(self.threshold, cmap='Greys_r')
-        #plt.show()
+        jsonName=''
+        sampleid=''
+        regionID=''
+
         if fileRL != '':
             fileName = fileRL.split('/')[-1]
+            jsonName = '_'.join(fileName.split('_')[:3])+'.json'
+            sampleid = jsonName.split('_')[0]
+            t_regionID = fileName.split('_')
+            regionID = '_'.join(t_regionID[4:]).replace('.png', '')
+
         elif self.File_Location.get() != '':
             fileName = self.File_Location.get().split('/')[-1]
+            jsonName = '_'.join(fileName.split('_')[:2])
+
 
         maskPath = os.path.join(maskPath,fileName)
+        if self.json_folder_location is None or self.json_folder_location == '':
+            self.error_message_text = 'JSON file location has not been set'
+            self.open_error_message_popup_window()
+            return
+        else:
+            with open(os.path.join(self.json_folder_location,jsonName), errors='ignore') as jsonFile:
+                data = json.load(jsonFile)
+            for region in data['regions']:
+                if region['id'] == regionID:
+                    region["RL_Path"] = fileRL
+                    region["TL_Path"] = fileTL
+                    region["Mask_Path"] = maskPath
+
+            with open(os.path.join(self.json_folder_location,jsonName), 'w', errors='ignore') as updatedFile:
+                json.dump(data, updatedFile, indent=4)
+
         cv2.imwrite(maskPath, self.threshold)
 
     def DrawBreakLine(self):
@@ -1110,10 +1344,11 @@ class Application:
         self.pairsList.append([(self.lineStart_x, self.lineStart_y), (self.updatedX, self.updatedY)])
 
     def SaveBreakChanges(self):
-        _t1 = copy.deepcopy(self.threshold)  # make a temp image to which all the stuff is done
-        if self.new_boundary != None:
+        updatedMask = self.convert_contours_to_mask_image()
+
+        if self.new_boundary != None: # if the user has digitised a new grain boundary manually
             points = np.array(self.new_boundary,'int32')
-            _t1 = cv2.fillPoly(_t1,[points], color=(255,255,255))
+            updatedMask = cv2.fillPoly(updatedMask,[points], color=(255,255,255))
             self.new_boundary = None
 
         if self.pairsList != []:
@@ -1123,29 +1358,32 @@ class Application:
                 y1 = p[0][1]
                 x2 = p[1][0]
                 y2 = p[1][1]
-                _t1 = cv2.line(_t1, (int(x1), int(y1)), (int(x2),int(y2)), (0,0,0),2)
+                updatedMask = cv2.line(updatedMask, (int(x1), int(y1)), (int(x2),int(y2)), (0,0,0),2)
             self.pairsList = []
 
-        self.threshold = _t1  # I used to use this: image_matrix_binary =cv2.cvtColor(image_matrix, cv2.COLOR_BGR2GRAY)
-
-        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (9, 9))
-        image_open = cv2.morphologyEx(self.threshold, cv2.MORPH_OPEN, kernel)
-        image_open[image_open > 0] = 255
-        labelim = label(image_open, background=0, connectivity=None)
+        self.threshold = updatedMask
+        #kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (9, 9))
+        #image_open = cv2.morphologyEx(self.threshold, cv2.MORPH_OPEN, kernel)
+        #image_open[image_open > 0] = 255
+        #labelim = label(image_open, background=0, connectivity=None)
+        labelim = label(self.threshold, background=0, connectivity=None)
         self.threshold = labelim.astype('uint8')
-        #overlay the mask on the original image:
-        mask_image = copy.deepcopy(self.threshold)
-        mask_image_colour = cv2.cvtColor(mask_image, cv2.COLOR_GRAY2RGB)
-        mask_image_colour[:,:,1] = 0
-        mask_image_colour[:, :, 2] = 0
-        mask_image_colour[mask_image_colour[:, :, 0]>0] = 255
-        if self.TLPath.get() != '':
+        #mask_image = copy.deepcopy(self.threshold)
+        #mask_image_colour = cv2.cvtColor(mask_image, cv2.COLOR_GRAY2RGB)
+        #mask_image_colour[:,:,1] = 0
+        #mask_image_colour[:, :, 2] = 0
+        #mask_image_colour[mask_image_colour[:, :, 0]>0] = 255
+        if self.TLPath.get() != '' and self.Current_Image=='TL':
             original_Image = cv2.imread(self.TLPath.get())
-            output_Image = cv2.addWeighted(original_Image,0.7, mask_image_colour, 0.3, 0)
-        else:
-            output_Image = mask_image_colour
+            #output_Image = cv2.addWeighted(original_Image,0.7, mask_image_colour, 0.3, 0)
+        elif self.RLPath.get() != '' and self.Current_Image=='RL':
+            original_Image = cv2.imread(self.RLPath.get())
+            #output_Image = cv2.addWeighted(original_Image, 0.7, mask_image_colour, 0.3, 0)
+        #else:
+            #output_Image = mask_image_colour
         #view the image
-        image_pill = Image.fromarray(output_Image)
+        #image_pill = Image.fromarray(output_Image)
+        image_pill = Image.fromarray(original_Image)
         self.img = ImageTk.PhotoImage(image=image_pill)
         self.myCanvas.delete('all')
         self.myCanvas.configure(scrollregion=[0, 0, self.img.width(), self.img.height()])
@@ -1154,6 +1392,7 @@ class Application:
         #paint the contours on
         contoursFinal, hierarchyFinal = cv2.findContours(self.threshold, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
         count_contour = 0
+        self.contourList.clear()
         for i in range(len(contoursFinal)):
             groupID = 'extcont_' + str(count_contour)
             uniqueID = 'extcont_' + str(count_contour)
@@ -1179,7 +1418,7 @@ class Application:
         self.threshold = image_clear_uint8
 
         self.contourList={}
-        fileLocation = 'C:/Users/20023951/Documents/PhD/GSWA/Geochem_Interrogate/Inv1_Files'
+        fileLocation = 'C:/Users/20023951/Documents/PhD/GSWA/Geochem_Interrogate/t2_inv1_files'
         if self.File_Location.get() != '': #if we're processing a single mask image
             fPath = self.File_Location.get()
         elif self.ProcessFolderFlag == True: #if w are processing an entire folder of masks
@@ -1252,8 +1491,8 @@ class Application:
                             y = region['boundingBox']['top'] + (region['boundingBox']['height'] / 2)
                             newX = x - imageLeft
                             newY = y - imageTop
-                            if newX > x and newX < x + imageWidth:
-                                if newY > y and newY < y + imageHeight:
+                            if x > imageLeft and x < imageLeft + imageWidth:
+                                if y > imageTop and y < imageTop + imageHeight:
                                     dupList.append([newX, newY])
                     if spot == False:
                         print('No spot in image')
@@ -1261,8 +1500,8 @@ class Application:
                     if scaleFlag == False  or micPix<0:
                         scale = getScale(name, path, 'SPOT')
                         if scale == -1:
-                            self.errorMessage = 'No scale available in sample'
-                            self.ErrorMessage()
+                            self.error_message_text = 'No scale available in sample'
+                            self.open_error_message_popup_window()
                             return
                         else:
                             micPix = 30 / scale
@@ -1364,21 +1603,23 @@ class Application:
             elif self.ProcessFolderFlag == True:
                 maskImage_List.append(self.currentMask)
 
-        if self.TLPath.get() !='':
-            imgTL = cv2.imread(self.TLPath.get())
+        if self.Current_Image == 'TL' and self.TLPath.get() !='':
+            img_to_display = cv2.imread(self.TLPath.get())
+        elif self.Current_Image == 'RL' and self.RLPath.get() !='':
+            img_to_display = cv2.imread(self.RLPath.get())
         else:
             self.threshold[self.threshold>0]=255
-            imgTL = np.stack((self.threshold,)*3, axis=-1)
+            img_to_display = np.stack((self.threshold,)*3, axis=-1)
 
         for i in range(len(label_List)):
-            imgTL = cv2.circle(imgTL, (int(centroid_List[i][1]), int(centroid_List[i][0])), 3, (0, 0, 255), 2)
-            cv2.putText(imgTL, str(label_List[i]), (int(centroid_List[i][1]), int(centroid_List[i][0])), cv2.FONT_HERSHEY_DUPLEX, 0.5, (0, 0, 255))
+            img_to_display = cv2.circle(img_to_display, (int(centroid_List[i][1]), int(centroid_List[i][0])), 3, (0, 0, 255), 2)
+            cv2.putText(img_to_display, str(label_List[i]), (int(centroid_List[i][1]), int(centroid_List[i][0])), cv2.FONT_HERSHEY_DUPLEX, 0.5, (0, 0, 255))
 
         for duplicate in dupList:
-            imgTL = cv2.circle(imgTL, (int(duplicate[0]), int(duplicate[1])), 3, (255, 255, 255), 2)
-            cv2.putText(imgTL, 'Duplicate', (int(duplicate[0]) + 5, int(duplicate[1]) + 5), cv2.FONT_HERSHEY_DUPLEX,0.5, (255, 255, 255))
+            img_to_display = cv2.circle(img_to_display, (int(duplicate[0]), int(duplicate[1])), 3, (255, 255, 255), 2)
+            cv2.putText(img_to_display, 'Duplicate', (int(duplicate[0]) + 5, int(duplicate[1]) + 5), cv2.FONT_HERSHEY_DUPLEX,0.5, (255, 255, 255))
 
-        image_pill = Image.fromarray(imgTL)
+        image_pill = Image.fromarray(img_to_display)
         self.img = ImageTk.PhotoImage(image = image_pill)
 
         self.myCanvas.delete('all')
@@ -1439,11 +1680,13 @@ class Application:
         micPix=None
 
     def binariseImages(self):
+        self.pairsList == []
         self.contourList = {}
         fileRL = self.RLPath.get()
         fileTL = self.TLPath.get()
         if fileRL != '' and self.rlVar.get() == 1:
             # Read in the files
+            self.Current_Image = 'RL'
             img = cv2.imread(fileRL)
             self.width = img.shape[1]
             self.height = img.shape[0]
@@ -1462,6 +1705,7 @@ class Application:
             imgTL = cv2.imread(fileTL)
             self.width = imgTL.shape[1]
             self.height = imgTL.shape[0]
+            self.Current_Image = 'TL'
 
             # Process TL image:
             grayTL = cv2.cvtColor(imgTL, cv2.COLOR_BGR2GRAY)
@@ -1474,21 +1718,25 @@ class Application:
 
         if fileRL != '' and fileTL != '' and self.rlVar.get() == 1 and self.tlVar.get() == 1:
             # Add the images together:
+            self.Current_Image = 'TL'
             self.threshold = cv2.add(otsuInvTL_uint8, fillRL_uint8)
             imCopy = cv2.imread(fileTL)  # import image as RGB for plotting contours in colour
-        elif fileRL != '' and fileTL != '' and self.rlVar.get() ==1 and self.tlVar.get() ==0:
+        elif fileRL != '' and self.rlVar.get() ==1 and self.tlVar.get() ==0:
+            self.Current_Image = 'RL'
             self.threshold = fillRL_uint8  # in some cases the tl and rl images are warped and can't fit ontop of  each other. I use the RL because of the spots captured on the RL image
-            imCopy = cv2.imread(fileTL)  # import image as RGB for plotting contours in colour
-        elif fileTL != '' and fileRL != '' and self.tlVar.get() ==1  and self.rlVar.get() ==0:
+            imCopy = cv2.imread(fileRL)  # import image as RGB for plotting contours in colour
+        elif fileTL != '' and self.tlVar.get() ==1  and self.rlVar.get() ==0:
+            self.Current_Image = 'TL'
             self.threshold = otsuInvTL_uint8  # in some cases the tl and rl images are warped and can't fit ontop of  each other. I use the RL because of the spots captured on the RL image
             imCopy = cv2.imread(fileTL)
         elif fileTL != '' and fileRL != '' and self.tlVar.get() ==1  and self.rlVar.get() ==0:
+            self.Current_Image = 'TL'
             self.threshold = otsuInvTL_uint8  # in some cases the tl and rl images are warped and can't fit ontop of  each other. I use the RL because of the spots captured on the RL image
             imCopy = cv2.imread(fileTL)
 
         # Once the image is binarised, get the contours
         contours, hierarchy = cv2.findContours(self.threshold, cv2.RETR_TREE,cv2.CHAIN_APPROX_SIMPLE)  # cv2.CHAIN_APPROX_SIMPLE, cv2.RETR_EXTERNAL
-
+        self.myCanvas.delete('all')
         image_pill = Image.fromarray(imCopy)
         self.img = ImageTk.PhotoImage(image=image_pill)
         self.myCanvas.configure(scrollregion=[0, 0, self.img.width(), self.img.height()])
@@ -1520,16 +1768,14 @@ class Application:
             count_contour += 1
 
     def convert_contours_to_mask_image(self):
-        self.pairsList = []
         mask = np.zeros((self.height, self.width), dtype=np.uint8)
-        areaList = []
         for contour in self.contourList:
             x, y = zip(*self.contourList[contour])
             newXY = list(zip(y, x))
             contMask = skimage.draw.polygon2mask((mask.shape[0], mask.shape[1]), newXY)
+            skimage.segmentation.expand_labels(contMask,1)
             mask = mask + contMask
             mask[mask == 2] = 0
-
         return mask
 
     def erode_small_artifacts(self,mask):
@@ -1539,197 +1785,53 @@ class Application:
         opening_uint8 = opening.astype('uint8')
         self.threshold = opening_uint8
 
+
     def Separate(self):
-        mask = self.convert_contours_to_mask_image()
-        self.erode_small_artifacts(mask)
+        reconstructed_points = [] #for testing
+        self.threshold = self.convert_contours_to_mask_image()
+        #self.erode_small_artifacts(mask)
 
         contours, hierarchy = cv2.findContours(self.threshold, cv2.RETR_TREE,cv2.CHAIN_APPROX_SIMPLE)  # get the new contours of the eroded masks
         hierarchy = np.squeeze(hierarchy)
-        simplifyList = []
-        hasParent = []
 
-        for j in range(len(contours)):
-            if hierarchy[j][3] == -1:
-                hasParent.append(False)
-            else:
-                hasParent.append(True)
-            cnt = np.squeeze(contours[j]).tolist()
-
-            if len(cnt) < 3:
-                simplifyList.append([-99999]) #don't bother simplifying very small contours
-            else:
-                simplified_contour = simplify(cnt, hasParent[j])
-                try:
-                    simplifyList.append(simplified_contour)
-                except:
-                    simplifyList.append([-99999])
-
-        s_coeffsList = []
-        s_locusList = []
-        for v in range(len(simplifyList)):
-            scont = np.array(simplifyList[v])
-            orderFactor = 0.2
-
-            order = int(len(scont) * orderFactor)
-            if order < 1:  # tiny contours can have an order of 0
-                s_coeffsList.append([-99999])
-                s_locusList.append([-99999])
-            else:
-                s_coeffs = calcEFD(scont, order) #this function sits in ZirconSeparationUtils
-                s_locus = pyefd.calculate_dc_coefficients(scont)
-                s_coeffsList.append(s_coeffs)
-                s_locusList.append(s_locus)
-
-        reconstructionList = []
-        xyReconstruction = []
-        for i in range(len(simplifyList)):
-            if len(s_coeffsList[i]) == 1:
-                reconstructionList.append([-99999])
-                xyReconstruction.append([-99999])
-            else:
-                s_number_of_points = len(simplifyList[i])
-                _reconstruction = pyefd.reconstruct_contour(s_coeffsList[i], s_locusList[i], s_number_of_points)
-                reconstruction = _reconstruction.astype('int')
-                reconstructionList.append(reconstruction.astype(int))  # list of XY reconstruction pairs.
-
-        s_kList = []
-        s_cumDistList = []
-        s_xList = []
-        s_yList = []
-        for x in range(len(s_coeffsList)):
-            if len(s_coeffsList[x]) == 1:
-                s_kList.append([-99999])
-                s_cumDistList.append([-99999])
-                s_xList.append([-99999])
-                s_yList.append([-99999])
-            else:
-                s_ContK = simplifyList[x]
-                s_xCont, s_yCont = zip(*s_ContK)
-                s_kValues, s_cumulativeDistance, s_vList = calculateK(s_ContK, s_coeffsList[x])
-                s_kList.append(s_kValues)
-                s_cumDistList.append(s_cumulativeDistance)
-
-                s_maxK_x = []  # test simplify
-                s_maxK_y = []  # test simplify
-                s_xC = []  # test simplify
-                s_yC = []  # test simplify
-                s_otherPeaks = []  # test simplify
-                s_allPeaks = []  # test simplify
-
-                # Take the absolute values of all K values.
-                s_absList = []  # test simplify
-                for s_val in s_kValues:  # test simplify
-                    s_absK = abs(s_val)  # test simplify
-                    s_absList.append(s_absK)  # test simplify
-                s_pAbs = np.percentile(s_absList, 80)  # test simplify
-                s_p = np.percentile(s_kValues, 80)  # test simplify
-
-                if max(s_kValues) < 0:  # 0.3:
-                    pass
+        composite_contour_list = []
+        for i in range(len(contours)):
+            cnt = np.squeeze(contours[i]).tolist()
+            composite_contour = CompositeContour(np.squeeze(contours[i]),i)
+            if hierarchy.ndim == 1:
+                if hierarchy[3] == -1:
+                    composite_contour.has_parent = False
                 else:
-                    for s_k in range(len(s_kValues)):  # test simplify
-                        try:
-                            s_thisK = s_kValues[s_k]  # test simplify
-                            s_nextK = s_kValues[s_k + 1]  # test simplify
-                            s_prevK = s_kValues[s_k - 1]  # test simplify
+                    composite_contour.has_parent = True
+            else:
+                if hierarchy[i][3] == -1:
+                    composite_contour.has_parent = False
+                else:
+                    composite_contour.has_parent = True
 
-                            if s_thisK > s_nextK and s_thisK > s_prevK:  # test simplify
-                                if abs(s_thisK) >= s_pAbs and s_thisK > s_p:  # test simplify
-                                    s_maxK_x.append(s_cumulativeDistance[s_k])  # test simplify
-                                    s_maxK_y.append(s_thisK)  # test simplify
-                                    s_xC.append(s_ContK[s_k][0])  # test simplify
-                                    s_yC.append(s_ContK[s_k][1])  # test simplify
-                                else:
-                                    s_otherPeaks.append(s_thisK)  # test simplify
+            if len(cnt) < 3: #if it is a straight line or a point, it is not a closed contour and thus not of interest
+                composite_contour.keep_contour = False
+            else:
+                composite_contour.coefficients,composite_contour.locus, composite_contour.reconstructed_points,composite_contour.keep_contour = GetCoefficients(composite_contour.original_points,composite_contour.has_parent)
 
-                        except:
-                            s_thisK = s_kValues[s_k]  # test simplify
-                            s_nextK = s_kValues[0]  # test simplify
-                            s_prevK = s_kValues[s_k - 1]  # test simplify
+                if composite_contour.keep_contour == False:
+                    continue
+                composite_contour.curvature_values, composite_contour.cumulative_distance = calculateK(composite_contour.reconstructed_points, composite_contour.coefficients) #composite_contour.reconstructed_points
+                curvature_maxima_length_positions, curvature_maxima_values, curvature_maxima_x, curvature_maxima_y, non_maxima_curvature = FindCurvatureMaxima(composite_contour.curvature_values,composite_contour.cumulative_distance,composite_contour.reconstructed_points)
+                node_curvature_values, node_distance_values, node_x, node_y = IdentifyContactPoints(curvature_maxima_length_positions, curvature_maxima_values, curvature_maxima_x, curvature_maxima_y, non_maxima_curvature)
+                if node_curvature_values != []:
+                    composite_contour.max_curvature_values = node_curvature_values
+                else:
+                    composite_contour.keep_contour = False
 
-                            if s_thisK > s_nextK and s_thisK > s_prevK:  # test simplify
-                                if abs(s_thisK) >= s_pAbs and s_thisK > s_p:  # test simplify
-                                    s_maxK_x.append(s_cumulativeDistance[s_k])  # test simplify
-                                    s_maxK_y.append(s_thisK)  # test simplify
-                                    s_xC.append(s_ContK[s_k][0])  # test simplify
-                                    s_yC.append(s_ContK[s_k][1])  # test simplify
-                                else:
-                                    s_otherPeaks.append(s_thisK)  # test simplify
+                if node_x !=[] and node_y !=[]:
+                    composite_contour.max_curvature_coordinates = list(zip(node_x,node_y))
+                else:
+                    composite_contour.keep_contour = False
 
-                # get rid of points that are nearer to the mean of the dataset than they are to the mean of the maxK's:
-                s_upperLimit = max(s_otherPeaks, default=0)  # i#test simplify
-                s_remove = []  # test simplify
-                for s_val in s_maxK_y:  # test simplify
-                    if s_val < 1.5 * s_upperLimit:  # test simplify
-                        s_iterator = s_maxK_y.index(s_val)  # test simplify
-                        s_remove.append(s_iterator)  # test simplify
+            composite_contour_list.append(composite_contour)
+        groups = FindNestedContours(hierarchy)
 
-                s_finalK = []  # test simplify
-                s_finalCumDist = []  # test simplify
-                s_finalNodeX = []  # test simplify
-                s_finalNodeY = []  # test simplify
-
-                for s_i in range(len(s_maxK_y)):  # test simplify
-                    if s_i in s_remove:  # test simplify
-                        pass  # test simplify
-                    else:  # test simplify
-                        s_finalK.append(s_maxK_y[s_i])  # test simplify
-                        s_finalCumDist.append(s_maxK_x[s_i])  # test simplify
-                        s_finalNodeX.append(s_xC[s_i])  # test simplify
-                        s_finalNodeY.append(s_yC[s_i])  # test simplify
-
-                if s_finalNodeX == [] or s_finalNodeY == []:  # test simplify
-                    s_xList.append([-99999])  # test simplify
-                    s_yList.append([-99999])  # test simplify
-                else:  # test simplify
-                    s_xList.append(s_finalNodeX)  # test simplify
-                    s_yList.append(s_finalNodeY)  # test simplify
-
-        # first find all the single contours and parent contours
-        parents = set()
-        singles = set()
-        groups = []
-        count = 0
-
-        for h in range(len(hierarchy)):  # i.e h is the index of the contours
-            if hierarchy[h][2] == -1 and hierarchy[h][3] == -1:
-                singles.add(count)
-            elif hierarchy[h][2] != -1 and hierarchy[h][3] == -1:
-                parents.add(count)
-            count += 1
-
-        for s in singles:
-            groups.append([s])
-
-        # group all the families together
-        for p in parents:
-            family = [p]
-            count = 0
-            for entry in hierarchy:
-                if entry[3] == p:
-                    family.append(count)
-                count += 1
-            groups.append(family)
-
-        # now link all nodes within the groups:
-        for group in groups:
-            pairs = linkNodes(group, s_xList, s_yList,simplifyList)
-            xs = []
-            ys = []
-            for p in pairs:
-                x1 = p[0][0]
-                y1 = p[0][1]
-                x2 = p[1][0]
-                y2 = p[1][1]
-                self.pairsList.append([(x1, y1), (x2, y2)])
-        self.myCanvas.delete('all')
-        temp2_img = Image.fromarray(self.threshold, 'L')
-        temp2_img.save('C:/Users/20023951/Documents/PhD/GSWA/Geochem_Interrogate/Binarisation/threshold.png')
-        #self.img = ImageTk.PhotoImage(Image.open('C:/Users/20023951/Documents/PhD/GSWA/Geochem_Interrogate/Binarisation/threshold.png'))
-        #self.myCanvas.configure(scrollregion=[0, 0, self.img.width(), self.img.height()])
-        #self.myCanvas.create_image(0, 0, image=self.img, anchor=NW, tags="Image")
-
-        self.myCanvas.delete('all')
         dpi = 100
         fig = plt.figure(figsize=(self.width / dpi, self.height / dpi))
         ax = fig.add_axes([0, 0, 1, 1])
@@ -1740,10 +1842,18 @@ class Application:
             imgTL = cv2.imread(self.TLPath.get())
             plt.imshow(imgTL, cmap='Greys_r')
         plt.imshow(self.threshold, cmap='jet', alpha=0.5)
+        for contour in composite_contour_list:
+            if contour.keep_contour == False:
+                continue
+            x, y = zip(*contour.reconstructed_points)
+            plt.scatter(x, y, c=contour.curvature_values, vmin=-1, vmax=1, s=5)
+            xmax,ymax = zip(*contour.max_curvature_coordinates)
+            #for i in range (len(xmax)):
+            #    text= str(xmax[i])+" | "+str(ymax[i])
+             #   plt.text(xmax[i]+1,ymax[i]+3,c = 'red', s=text, size="medium")
+
+            plt.scatter(xmax,ymax,facecolors='none',edgecolors='red',s=10,linewidth=1)
         plt.subplots_adjust(top=1, bottom=0, right=1, left=0, hspace=0, wspace=0)
-        #savepath = 'C:/Users/20023951/Documents/PhD/GSWA/Geochem_Interrogate/Binarisation/_t.png'
-        #plt.savefig(savepath, bbox_inches=None, dpi=dpi,pad_inches=0)  # image_pill = Image.frombytes("RGBA", (self.width, self.height), image_matrix)
-        #self.img = ImageTk.PhotoImage(file=savepath)  # (image=image_pill)
         canvas_data, (canvas_width,canvas_height) = canvas.print_to_buffer()  # taken from here: https://matplotlib.org/3.1.1/gallery/user_interfaces/canvasagg.html
         image_matrix = np.frombuffer(canvas_data, np.uint8).reshape((canvas_height, canvas_width, 4))
         image_pill = Image.frombytes("RGBA", (canvas_width, canvas_height), image_matrix)
@@ -1751,15 +1861,28 @@ class Application:
         self.myCanvas.configure(scrollregion=[0, 0, self.img.width(), self.img.height()])
         self.myCanvas.create_image(0, 0, image=self.img, anchor=NW, tags="Image")
 
-
-        for pair in self.pairsList:
-            x1 = pair[0][0]
-            y1 = pair[0][1]
-            x2 = pair[1][0]
-            y2 = pair[1][1]
-            ID = 'line_' + str(self.count)
-            self.count += 1
-            self.myCanvas.create_line(x1, y1, x2, y2, width=3, fill='red', activefill='yellow', tags=(ID))
+        # now link all nodes within the groups:
+        for group in groups:
+            # get the contours that are relevant to the group in question:
+            contour_group = []
+            for index in group:
+                for contour in composite_contour_list:
+                    if contour.index == index and contour.keep_contour == True:  # watch out, what if the parent contour is removed?
+                        contour_group.append(contour)
+                        composite_contour_list.remove(contour)  # if it's added to a group to be processed, remove it from the main group so that we don't have to include it in future loops
+            if contour_group == []:
+                continue
+            pairs = linkNodes(contour_group)
+            matplotlib.use('Agg')
+            for p in pairs:
+                x1 = p[0][0]
+                y1 = p[0][1]
+                x2 = p[1][0]
+                y2 = p[1][1]
+                self.pairsList.append([(x1, y1), (x2, y2)])
+                ID = 'line_' + str(self.count)
+                self.count += 1
+                self.myCanvas.create_line(x1, y1, x2, y2, width=3, fill='red', activefill='yellow', tags=(ID))
 
     def onClick(self, event):
         thisSpot = event.widget.find_withtag('current')[0]
@@ -1787,25 +1910,26 @@ class Application:
         self.saveSpotNo.grid(column=0, row=1, pady=5)
 
     def DisplayImages(self):
+        #This is for cycling through images associated with json files when capturing spots
         result = True
         self.myCanvas.delete('all')
         im = ''
         jf = ''
 
         if self.imgCount < len(self.jsonList) and self.imgCount > -1:
-            self.imgIterCurrent = self.jsonList[self.imgCount]
-            im = self.imgIterCurrent[1]
-            jf = self.imgIterCurrent[0]
+            self.image_iterator_current = self.jsonList[self.imgCount]
+            im = self.image_iterator_current[1]
+            jf = self.image_iterator_current[0]
             pattern = r"_p[0-9]{1,2}.png"
 
-            self.currentSample = re.sub(pattern, "",
-                                        im)  # don't remove this. This tracks the sample number and is used for tracking unique sample id's per sample
+            self.currentSample = im.split("_")[0]
+            #re.sub(pattern, "",im)  # don't remove this. This tracks the sample number and is used for tracking unique sample id's per sample
             iterator = self.sampleList.index(self.currentSample) + 1
             fileName = os.path.join(self.folderPath, im)
             self.img = ImageTk.PhotoImage(Image.open(fileName))
             self.myCanvas.configure(scrollregion=[0, 0, self.img.width(), self.img.height()])
             self.myCanvas.create_image(0, 0, image=self.img, anchor=NW, tags="Image")
-            self.label['text'] = im + '  | Sample ' + str(iterator) + ' of ' + str(len(self.imageSet))
+            self.label['text'] = im + '  | Sample ' + str(iterator) + ' of ' + str(len(self.sampleList))
         else:
             result = False
             return result
@@ -1813,7 +1937,7 @@ class Application:
         with open(os.path.join(self.folderPath, jf), errors='ignore') as jsonFile:
             data = json.load(jsonFile)
             for region in data['regions']:
-                if region['tags'][0] == 'SPOT' and region['type'] == 'RECTANGLE':
+                if region['tags'][0] == 'SPOT AREA' and region['type'] == 'RECTANGLE':
                     self.spotCount += 1
                     spotID = region['id']
                     x1 = region['points'][0]['x']
@@ -1822,7 +1946,7 @@ class Application:
                     y2 = region['points'][2]['y']
                     self.myCanvas.create_rectangle(x1, y1, x2, y2, width=3, outline='blue', activefill='yellow',
                                                    activeoutline='yellow', tags=(spotID, 'spot' + str(self.spotCount)))
-                    self.myCanvas.create_text(x1, y1 - 15, text=spotID, fill='blue', font=("Helvetica", 12, "bold"),tags=spotID)
+                    self.myCanvas.create_text(x1, y1 - 15, text="Spot area", fill='blue', font=("Helvetica", 12, "bold"),tags=spotID)
                     self.myCanvas.tag_bind('spot' + str(self.spotCount), '<ButtonPress-1>', self.onClick)
 
                 if region['tags'][0] == 'DUPLICATE' and region['type'] == 'RECTANGLE':
@@ -1834,10 +1958,10 @@ class Application:
                     y2 = region['points'][2]['y']
                     self.myCanvas.create_rectangle(x1, y1, x2, y2, width=3, outline='red', activefill='yellow',
                                                    activeoutline='yellow',
-                                                   tags=(spotID, 'Duplicate' + str(self.spotCount)))
-                    self.myCanvas.create_text(x1, y1 - 15, text=spotID, fill='red', font=("Helvetica", 12, "bold"),
+                                                   tags=(spotID, 'DUPLICATE' + str(self.spotCount)))
+                    self.myCanvas.create_text(x1, y1 - 15, text="Duplicate", fill='red', font=("Helvetica", 12, "bold"),
                                               tags=spotID)
-                    self.myCanvas.tag_bind('Duplicate' + str(self.spotCount), '<ButtonPress-1>', self.onClick)
+                    self.myCanvas.tag_bind('DUPLICATE' + str(self.spotCount), '<ButtonPress-1>', self.onClick)
 
                 if region['tags'][0] == 'SPOT' and region['type'] == 'POINT':
                     self.spotCount += 1
@@ -1880,6 +2004,67 @@ class Application:
                                               tags=(ID, 'newScale' + str(self.spotCount)))
                     # self.myCanvas.tag_bind(ID,'<ButtonPress-1>', self.onClick)
 
+    def Load_Image(self,image_to_display):
+        #This is for optionally loading either the TL or RL image
+        self.myCanvas.delete('all')
+        image_pill=None
+        if image_to_display == 0:
+            self.Current_Image = 'RL'
+            fileRL = self.RLPath.get()
+            if fileRL == '':
+                self.error_message_text = "No reflected light image has been selected"
+                self.open_error_message_popup_window()
+                return
+            img = cv2.imread(fileRL)
+            self.width = img.shape[1]
+            self.height = img.shape[0]
+            image_pill = Image.fromarray(img)
+        if image_to_display == 1:
+            self.Current_Image = 'TL'
+            fileTL = self.TLPath.get()
+            if fileTL == '':
+                self.error_message_text = "No transmitted light image has been selected"
+                self.open_error_message_popup_window()
+                return
+            img = cv2.imread(fileTL)
+            self.width = img.shape[1]
+            self.height = img.shape[0]
+            image_pill = Image.fromarray(img)
+
+        self.img = ImageTk.PhotoImage(image=image_pill)
+        self.myCanvas.configure(scrollregion=[0, 0, self.img.width(), self.img.height()])
+        self.myCanvas.create_image(0, 0, image=self.img, anchor=NW, tags="Image")
+
+        self.Draw_Contours()
+
+    def Draw_Contours(self):
+        # paint the contours on
+        #contoursFinal, hierarchyFinal = cv2.findContours(self.threshold, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+        #count_contour = 0
+
+        for key,value in self.contourList.items():
+            poly_coords = []
+            uniqueID = key
+            groupID = key
+            if len(value) == 1:
+                pass
+            else:
+                for coords in value:
+                    poly_coords.append(coords[0])
+                    poly_coords.append(coords[1])
+                self.myCanvas.create_polygon(poly_coords, fill='', outline='red', activeoutline='yellow', width=3,tags=(groupID, uniqueID))
+        #for i in range(len(contoursFinal)):
+            #groupID = 'extcont_' + str(count_contour)
+            #uniqueID = 'extcont_' + str(count_contour)
+            #squeeze = np.squeeze(contoursFinal[i])
+            #self.contourList[uniqueID] = squeeze
+            #poly_coords = []
+           # for coords in squeeze:
+           #     poly_coords.append(coords[0])
+           #     poly_coords.append(coords[1])
+            #self.myCanvas.create_polygon(poly_coords, fill='', outline='red', activeoutline='yellow', width=3,
+           #                              tags=(groupID, uniqueID))
+            #count_contour += 1
 
 root = Tk()
 my_gui = Application(root)

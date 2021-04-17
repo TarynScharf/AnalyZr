@@ -1,4 +1,4 @@
-import cv2  # this is going to read my image and give me contours
+'''import cv2  # this is going to read my image and give me contours
 import numpy as np
 from pyefd import elliptic_fourier_descriptors
 from pyefd import reconstruct_contour as rc
@@ -505,4 +505,4 @@ def simplify(poly, inside):
                 y = poly[j - 1][1] + (poly[j][1] - poly[j - 1][1]) / diffRatio
                 newPoints.append([x, y])
 
-    return newPoints
+    return newPoints'''
