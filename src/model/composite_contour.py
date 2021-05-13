@@ -10,4 +10,5 @@ class CompositeContour:
         self.keep_contour:bool = True
         self.index = index
         self.has_parent = None
+        self.max_curvature_distance = None
 

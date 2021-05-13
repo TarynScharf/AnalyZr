@@ -1,4 +1,4 @@
-from src.model.images import *
+from src.application_model.images import *
 
 
 def smooth(img):

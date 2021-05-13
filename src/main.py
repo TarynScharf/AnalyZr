@@ -1,18 +1,20 @@
+import csv
 import datetime
 import tkinter as tk
 from tkinter import *
 from tkinter import filedialog
 from tkinter.ttk import *
 
+import os
+from src.application_model import Model
+os.environ["OPENCV_IO_MAX_IMAGE_PIXELS"] = pow(2,40).__str__()
 import matplotlib
 import skimage
 from skimage import segmentation
 from skimage.segmentation import expand_labels
 from PIL import ImageTk, Image
 from matplotlib.backends.backend_agg import FigureCanvasAgg
-
 from src.model.composite_contour import CompositeContour
-
 matplotlib.use('Agg')
 from src.model.measure_shape import *
 from src.model.ZirconSeparationUtils import *
@@ -20,8 +22,9 @@ from src.model.ZirconSeparationUtils import *
 
 class Application:
 
-    def __init__(self, master):
+    def __init__(self, master, model):
         self.master = master
+        self.model = model
         master.title("Zircon Shape Analysis")
         master.geometry('1600x3000')
 
@@ -30,8 +33,8 @@ class Application:
         self.mainMenu.add_cascade(label="File", menu=self.fileMenu)
 
         self.imagesMenu = Menu(self.mainMenu, tearoff=0)
-        self.imagesMenu.add_command(label="Load Images for Spot Capture", command=lambda: self.load_files_for_spot_capture())
-        self.imagesMenu.add_command(label="Capture Analytical Spot [s]", command=self.PointDraw)
+        self.imagesMenu.add_command(label="Load Images", command=lambda: self.load_files_for_spot_capture())
+        self.imagesMenu.add_command(label="Capture Analytical Spot [s]", command=self.start_spot_capture)
         self.imagesMenu.add_command(label="Capture Analytical Spot Size [a]", command=self.RectSpotDraw)
         self.imagesMenu.add_command(label="Mark Object for Deletion [d]", command=self.DupDraw)
         self.imagesMenu.add_command(label="Capture Scale [l]", command=self.DrawScale)
@@ -81,67 +84,7 @@ class Application:
         self.label = Label(self.myMenuFrame, text='')
         self.label.grid(column=1, row=0, padx=5, pady=10)
 
-        self.myCanvas = Canvas(self.myFrame, bg="white")
-        self.vScroll = Scrollbar(self.myFrame, orient='vertical', command=self.myCanvas.yview)
-        self.hScroll = Scrollbar(self.myFrame, orient='horizontal', command=self.myCanvas.xview)
-        self.vScroll.pack(side=RIGHT, fill=Y)
-        self.hScroll.pack(side=BOTTOM, fill=X)
-        self.myCanvas.configure(yscrollcommand=self.vScroll.set)
-        self.myCanvas.configure(xscrollcommand=self.hScroll.set)
-        self.myCanvas.bind("<Button-3>", self.DeleteObject)
-        self.myCanvas.pack(side=LEFT, expand=True, fill=BOTH)
-
-        # variables
-        self.json_folder_path = tk.StringVar()
-        self.last_contour_deleted={} #this dictionary will hold the last contour deleted, incase of an undo
-        self.text_label = '' #label for duplicate grains and spot scales
-        self.json_folder_location = None #where json files are stored.
-        self.Current_Image = 'TL' #tracks which image type is displayed
-        self.new_boundary = None # when a polygon is manually draw, it is saved to this variable.
-        self.contourList = {}      #a list of all the contours to turn into  binary masks
-        self.maskPath = ''
-        self.width=0 #used to set image dimensions on canvas, and in saved images. Ensures saved images have the same dimensions as input images. Important for relating spots to images, spatially.
-        self.height = 0 #used to set image dimensions on canvas, and in saved images. Ensures saved images have the same dimensions as input images. Important for relating spots to images, spatially.
-        self.pairsList=[]
-        self.count=0 #Used to put id's ontobreak  lines
-        self.saveLocation = 'C:/Users/20023951/Documents/PhD/GSWA/Geochem_Interrogate/Binarisation/_o.png'  # where the 1st binarised image will output to
-        self.case = ''  # the function of the browse button. I.e. browse for capture, RL or TL
-        self.folderPath = ''
-        self.img = None
-        self.image_iterator_current = None
-        self.currentSpotNumber = tk.StringVar()
-        self.spotPointCount = 0
-        self.x0 = None
-        self.y0 = None
-        self.labelID = ''
-        self.spotCount = 0
-        self.rectangle = None
-        self.Type = None
-        self.imgCount = 0
-        self.jsonList = []
-        self.uniqueTag = None
-        self.groupTag = None
-        self.unique_sample_numbers = {} #a dictionary of all samples numbers of all images loaded for spot capture. Contains unique sample numbers only. Records spots per sample.
-        self.sampleList = [] #a list of all sample numbers of all images loaded for spot capture. May contain duplicates.
-        self.error_message_text = ''
-        self.currentSample = None
-        self.rectangleType = None
-        self.boundaryPoints = []  # This MUST be cleared every time the polygon is saved
-        self.thisPoly = None  # This MUST be set back to NONE every time the polygon is saved
-        self.polyCoords = []  # Coordinates of the polygon currently active. This MUST be set back to [] every time the polygon is saved
-        self.coordID = []  # List of coordinate ID's for the polygon currently active. This MUST be set back to [] every time the polygon is saved
-        self.Move = False  # Whether or not a move action can take place. Records true/false if an existing entity was selected
-        self.allPolys = {}  # ID-coordinate dictionary of all polygons on the page
-        self.lineStart_y = None  # used for drawing a scale line
-        self.lineStart_x = None  # used for drawing a scale line
-        self.updatedX = None
-        self.updatedY = None
-        self.threshold = None
-        self.spotID = '' #used when repositioning spots
-
-        self.ProcessFolderFlag = False #flag that tracks whether an entire folder of masks is to be processed
-        self.currentMask = None #if processing an entire mask folder, keep track of the current mask's file path
-
+        self.drawing=Drawing(self.myFrame)
 
         # Global bindings (aka shortcuts)
         master.bind("s", lambda e: self.PointDraw())
@@ -155,38 +98,8 @@ class Application:
         master.bind("m", lambda e: self.PointMove())
         master.bind("l", lambda e: self.DrawScale())
 
-        self.myCanvas.bind_all("<MouseWheel>", self.ScrollWithMouseWheel)
-
-    def DrawScale(self):
-        #this allows the user to draw a two-point line to capture a length scale which exists in some of the images
-        self.myCanvas.unbind("<Button-1>")  # unbind the spot digitisation
-        self.myCanvas.unbind("<ButtonPress-1>")  # unbind rectangle digitisation
-        self.myCanvas.unbind("<B1-Motion>")  # unbind rectangle digitisation
-        self.myCanvas.unbind("<ButtonRelease-1>")  # unbind rectangle digitisation
-        self.myCanvas.bind("<ButtonPress-1>", self.LineStart)
-        self.myCanvas.bind("<B1-Motion>", self.LineDraw)
-        self.myCanvas.bind("<ButtonRelease-1>", lambda e: self.Save())
-
-    def LineStart(self, event):
-        uniqueSuffix = 'scale'
-        colour = 'red'
-        uniqueCode = str(datetime.datetime.now())
-        self.uniqueTag = uniqueSuffix + '_' + str(uniqueCode)
-        self.lineStart_x = self.myCanvas.canvasx(event.x)
-        self.lineStart_y = self.myCanvas.canvasy(event.y)
-        self.scaleLine = self.myCanvas.create_line(self.lineStart_x, self.lineStart_y, self.lineStart_x + 1,
-                                                   self.lineStart_y + 1, width=3, fill=colour, activefill='yellow',
-                                                   tags=(self.uniqueTag))
-        self.Type = 'SCALE'
-
-    def LineDraw(self, moveEvent):
-        #self.myCanvas.unbind("<ButtonPress-1>")
-        self.updatedX = self.myCanvas.canvasx(moveEvent.x)
-        self.updatedY = self.myCanvas.canvasy(moveEvent.y)
-        self.myCanvas.coords(self.scaleLine, self.lineStart_x, self.lineStart_y, self.updatedX, self.updatedY)
-
-    def ScrollWithMouseWheel(self, event):
-        self.myCanvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+    def update_polygon(self,polygon):
+        self.drawing.draw_polygon(polygon)
 
     def NextImage(self):
         self.imgCount += 1
@@ -202,275 +115,6 @@ class Application:
             self.imgCount = self.imgCount + 1
             result = self.DisplayImages()
 
-    def DupDraw(self):
-        self.rectangleType = 'DUPLICATE'
-        self.RectDraw()
-
-    def BoundaryDraw(self):
-        uniqueCode = str(datetime.datetime.now())
-        self.myCanvas.unbind("<Button-1>")  # unbind the spot digitisation
-        self.myCanvas.unbind("<ButtonPress-1>")  # unbind rectangle digitisation
-        self.myCanvas.unbind("<B1-Motion>")  # unbind rectangle digitisation
-        self.myCanvas.unbind("<ButtonRelease-1>")  # unbind rectangle digitisation
-        self.myCanvas.bind("<ButtonPress-1>", self.PolyCoords)
-        self.myCanvas.bind("<ButtonPress-2>", self.PolyComplete)
-        self.groupTag = 'boundary' + uniqueCode  # polygon and points(ovals)will have the same group tag
-        self.uniqueTag = 'poly' + uniqueCode  # only the polygon gets the unique id
-        self.Type = "POLYGON"
-
-    def PolyCoords(self, polyDrawEvent):
-        self.x0 = self.myCanvas.canvasx(polyDrawEvent.x)
-        self.y0 = self.myCanvas.canvasy(polyDrawEvent.y)
-        xy = [self.x0, self.y0]
-        coordID = 'p' + str(datetime.datetime.now())  # each point gets its own unique id
-        if self.uniqueTag in self.allPolys:
-            self.allPolys[self.uniqueTag].append([coordID, self.x0, self.y0])  # if the polygon exists, add extra points
-        else:
-            self.allPolys[self.uniqueTag] = [[coordID, self.x0,self.y0]]  # if this is the first point of a new poly, add the new poly and point to the dictionary
-        coords = []  # used locally to collate all xy's
-        points = self.allPolys[self.uniqueTag]
-        for p in points:
-            coords.append(p[1])
-            coords.append(p[2])
-
-        # Draw circle over vertex. Idea taken from:
-        # https://stackoverflow.com/questions/51044836/tkinter-update-polygon-points-on-mouse-click
-        # self.myCanvas.create_oval(self.x0-3, self.y0-3, self.x0+3, self.y0+3, fill='white',activefill = 'yellow', activeoutline='yellow',
-        # outline='grey', width=1, tags = (self.groupTag, coordID))
-        if len(self.allPolys[self.uniqueTag]) > 2:
-            self.myCanvas.delete(self.uniqueTag)  # delete all pre-existing lines and redraw
-            self.myCanvas.create_polygon(coords, fill='', outline='red', activeoutline='yellow', width=1,
-                                         tags=(self.groupTag, self.uniqueTag))  # redraw,now includes the added point
-        elif len(self.allPolys[self.uniqueTag]) == 2:
-            self.myCanvas.delete(self.uniqueTag)  # delete all pre-existing lines and redraw
-            self.myCanvas.create_line(coords, fill='red', activefill='yellow', width=1, tags=(
-            self.groupTag, self.uniqueTag))  # if there are only two points, its a line not a polygon
-        else:
-            pass  # if there is only one point, don't draw any lines. A point will be drawn on the point as per line 159.
-
-    def PolyComplete(self, event):
-        self.myCanvas.unbind("<ButtonPress-2>") #unbind from polygon digitisation
-        coords = []
-        for coord in self.allPolys[self.uniqueTag]:
-            coords.append([coord[1], coord[2]])
-        self.new_boundary = coords
-        self.SaveBreakChanges()
-
-    def PointMove(self):
-        self.myCanvas.bind("<Button-1>", self.StartPointMove)
-        self.myCanvas.bind("<ButtonRelease-1>", self.FinishPointMove)
-
-    def StartPointMove(self, moveEvent):
-        thisObj = moveEvent.widget.find_withtag('current')[0]  # get the groupID of the entity
-        self.thisObjID = self.myCanvas.gettags(thisObj)[1]  # This will make the unique point ID available in the next step:move. Because move doesn't click on a specific entity, there is no ID associated with 'current'
-        self.groupID = self.myCanvas.gettags(thisObj)[0]
-        self.myCanvas.bind("<B1-Motion>", self.UpdatePointMove)
-        self.myCanvas.bind("<ButtonRelease-1>", self.FinishPointMove)
-        self.Move = False
-        if 'p' in self.thisObjID or 'spot' in self.thisObjID:  # Only points can be moved!
-            self.Move = True
-
-    def UpdatePointMove(self, moveEvent):
-        if self.Move == False:
-            return
-        else:
-            xyList = []  # used locally to draw the  polygon with  updated xy
-            self.x0 = self.myCanvas.canvasx(moveEvent.x)
-            self.y0 = self.myCanvas.canvasy(moveEvent.y)
-            self.myCanvas.delete(self.thisObjID)  # delete the pre-existing point then redraw in the new position
-            self.myCanvas.create_oval(self.x0 - 6, self.y0 - 6, self.x0 + 6, self.y0 + 6, fill='lightgreen',
-                                      activefill='yellow', activeoutline='yellow', outline='green',
-                                      width=2, tags=(self.groupID, self.thisObjID))
-            all_IDs = self.myCanvas.find_withtag(
-                self.groupID)  # get all items with the same group tag. This will include all ovals and the polygon
-            for ID in all_IDs:
-                uniqueID = self.myCanvas.gettags(ID)[1]  # get the unique ID of each entity that shares the group ID
-                if "poly" in uniqueID or 'contour_' in uniqueID:  # test whether it's a polygon
-                    for i in range(len(
-                            self.allPolys[uniqueID])):  # find the point that was clicked on and update it's xy coords
-                        if self.allPolys[uniqueID][i][0] == self.thisObjID:
-                            self.allPolys[uniqueID][i][1] = self.x0
-                            self.allPolys[uniqueID][i][2] = self.y0
-                    for point in self.allPolys[uniqueID]:
-                        xyList.append(point[1])
-                        xyList.append(point[2])
-                    groupID = self.myCanvas.gettags(uniqueID)[0]  # find the group tag
-                    if len(self.allPolys[uniqueID]) > 2:
-                        self.myCanvas.delete(uniqueID)  # delete pre-existing poly and redraw with new coordinates
-                        self.myCanvas.create_polygon(xyList, fill='', outline='red', activeoutline='yellow', width=1,
-                                                     tags=(groupID, uniqueID))
-                    elif len(self.allPolys[uniqueID]) == 2:
-                        self.myCanvas.create_line(xyList, fill='red', activeoutline='yellow', tags=(groupID, uniqueID))
-                    else:
-                        pass
-                if 'spotno' in uniqueID:  # if its a label on a spot
-                    self.myCanvas.delete(uniqueID)
-                    self.myCanvas.create_text(self.x0 - 10, self.y0 - 10, fill='green', text=self.spotID,tags=(self.groupID, uniqueID))
-                    self.spotID = uniqueID.split('_')[1]
-
-    def FinishPointMove(self, moveEvent):
-        self.myCanvas.unbind("<B1-Motion>")
-        self.myCanvas.unbind("<ButtonRelease-1>")
-
-        fileLocation = 'C:/Users/20023951/Documents/PhD/GSWA/Geochem_Interrogate/t2_inv1_files'
-        for path, folder, files in os.walk(fileLocation):
-            for name in files:
-                if name == self.jsonName:  # find the json file that relates to the pdf page (image) under consideration
-                    with open(os.path.join(fileLocation, self.jsonName), errors='ignore') as jsonFile:
-                        data = json.load(jsonFile)
-                    for region in data['regions']:
-                        t_regionID = self.File_Location.get().split('/')[-1].split('_')
-                        regionID = '_'.join(t_regionID[4:]).replace('.png', '')
-                        if region['id'] == regionID:
-                            imageTop = region['boundingBox']['top']  # find out the starting point (top left) of the photo under consideration
-                            imageLeft = region['boundingBox']['left']
-                            imageWidth = region['boundingBox']['width']
-                            imageHeight = region['boundingBox']['height']
-                        if region['id'] == self.spotID and region['type']=='POINT':
-                            x = self.x0+imageLeft
-                            y = self.y0 +imageTop
-                            newPoints = [{"x": x, "y": y}]
-                            region["points"] = newPoints
-                        elif region['id'] == self.spotID and region['type']=='RECTANGLE':
-                            left_x=self.x0-(region['boundingBox']['width']/2)+ imageLeft
-                            right_x=self.x0+(region['boundingBox']['width']/2) + imageLeft
-                            top_y=self.y0-(region['boundingBox']['height']/2) +imageTop
-                            bottom_y=self.y0+(region['boundingBox']['height']/2) +imageTop
-                            newPoints = [{"x": left_x, "y": top_y},{"x": right_x, "y": top_y},{"x": right_x, "y": bottom_y},{"x": left_x, "y": bottom_y} ]
-                            region["boundingBox"] ={
-                                                        "height": region["boundingBox"]['height'],
-                                                        "width": region["boundingBox"]['width'],
-                                                        "left": left_x,
-                                                        "top": top_y
-                                                    }
-                            region["points"] = newPoints
-
-                    with open(os.path.join(fileLocation, self.jsonName), 'w', errors='ignore') as updatedFile:
-                        json.dump(data, updatedFile, indent=4)
-                    self.uniqueTag = None
-                    self.groupTag = None
-                    self.spotID = ''
-
-    def EditPolygon(self):
-        self.myCanvas.unbind("<ButtonPress-1>")  # unbind rectangle digitisation
-        self.myCanvas.unbind("<B1-Motion>")  # unbind rectangle digitisation
-        self.myCanvas.unbind("<ButtonRelease-1>")  # unbind rectangle digitisation
-        self.myCanvas.bind("<Button-1>", self.SelectPolygon)
-
-    def SelectPolygon(self, selectEvent):
-        thisObj = selectEvent.widget.find_withtag('current')[0]
-        uniqueTag = self.myCanvas.gettags(thisObj)[1]
-        if 'poly' in uniqueTag:
-            self.uniqueTag = uniqueTag
-            self.groupTag = self.myCanvas.gettags(thisObj)[0]
-            self.myCanvas.bind("<Button-1>", self.InsertPoint)
-        elif 'contour_' or 'extcont_' in uniqueTag:
-            self.uniqueTag = uniqueTag
-            self.groupTag = self.myCanvas.gettags(thisObj)[0]
-            contour_coords = self.myCanvas.coords(self.uniqueTag)
-            coordList = []
-            for x in range(0,len(contour_coords),2):
-                x0 = contour_coords[x]-3
-                y0=contour_coords[x+1]-3
-                x1 = x0+3
-                y1=y0+3
-                coordID = 'p' + str(datetime.datetime.now())
-                coordList.append([coordID,contour_coords[x],contour_coords[x+1]])
-                self.myCanvas.create_oval(x0,y0,x1,y1,fill='white', activefill='yellow',activeoutline='yellow', outline='grey',width=2, tags=(self.groupTag, coordID))
-            self.allPolys[self.groupTag] = coordList
-            self.PointMove()
-        else:
-            self.error_message_text = 'Select a polygon to edit'
-            self.open_error_message_popup_window()
-    def InsertPoint(self):
-        self.myCanvas.unbind("<Button-1>")
-        self.myCanvas.bind("<Button-1>", self.StartInsertPoint)
-
-    def StartInsertPoint(self, addEvent):
-        if self.uniqueTag == None:
-            self.error_message_text = 'Select a polygon to edit'
-            self.open_error_message_popup_window()
-            return
-        delta_x = None  # used to calculate displacement
-        delta_y = None  # used to calculate displacement
-        tot_diff = None  # used to calculate displacement
-        insertIncr = None  # where to insert the new point coordinates in the self.allPolys[thispoly] list
-        diffList = []  # used to hold the displacement of the new point relative to all existing points, so that the closest  point can be determined
-        coords = []  # used to hold the coordinates of the final polygon, for drawing purposes
-
-        self.x0 = self.myCanvas.canvasx(addEvent.x)
-        self.y0 = self.myCanvas.canvasy(addEvent.y)
-
-        # Find the nearest point in the polygon array:
-        for point in self.allPolys[self.uniqueTag]:
-            delta_x = abs(self.x0 - point[1])
-            delta_y = abs(self.y0 - point[2])
-            tot_diff = delta_x + delta_y
-            diffList.append(tot_diff)
-        min_diff = min(diffList)  # find the closest point in the polygon
-        incr = diffList.index(min_diff)  # find the position of this closest point in the polyon array
-
-        # find out if the new point lies left or right of this closest point, so we know where to insert the new point in the polygon coordinate array
-        # There is an assumption that the polygon is always digitised anticlockwise. This isn't great.
-        closestX = self.allPolys[self.uniqueTag][incr][1]
-        closestY = self.allPolys[self.uniqueTag][incr][2]
-        try:
-            nextX = self.allPolys[self.uniqueTag][incr + 1][1]
-            nextY = self.allPolys[self.uniqueTag][incr + 1][2]
-        except:
-            # if incr+1 goes beyond the list length, then look at the first point in the list
-            nextX = self.allPolys[self.uniqueTag][0][1]
-            nextY = self.allPolys[self.uniqueTag][0][2]
-
-        firstRight = None  # bool -  is the new point right of the closest existing point
-        secondRight = None  # bool - is the new point right of the next(in direction of incrementor) point
-
-        # Find positioning of new point in the polygon array
-        if self.x0 > closestX:  # x increases to the right, so increase incrementor
-            firstRight = True
-            if self.x0 > nextX:
-                secondRight = True
-            elif self.x0 < nextX:
-                secondRight = False
-            else:
-                # self.x0 == nextX
-                insertIncr = incr + 1
-        elif self.x0 < closestX:
-            firstRight = False
-            if self.x0 > nextX:
-                secondRight = True
-            elif self.x0 < nextY:
-                secondRight = False
-            else:
-                insertIncr = incr + 1
-        elif self.x0 == closestX:
-            #print('I')
-            if self.y0 == closestY:
-                return  # duplicate point, do nothing
-            else:
-                #print('J')
-                insertIncr = incr + 1
-
-        if insertIncr == None:
-            if firstRight == True and secondRight == True:
-                insertIncr = incr
-            elif firstRight == False and secondRight == False:
-                insertIncr = incr
-            elif firstRight == True and secondRight == False:
-                insertIncr = incr + 1
-            elif firstRight == False and secondRight == True:
-                insertIncr = incr + 1
-        p = 'pt' + str(datetime.datetime.now())
-        self.myCanvas.delete(self.uniqueTag)  # delete pre-existing poly
-        self.myCanvas.create_oval(self.x0 - 3, self.y0 - 3, self.x0 + 3, self.y0 + 3, fill='white', activefill='yellow',
-                                  activeoutline='yellow', outline='grey',
-                                  width=2, tags=(self.groupTag, p))  # draw the newly inserted point
-        # redraw the new polygon
-        self.allPolys[self.uniqueTag].insert(insertIncr, [p, self.x0, self.y0])
-        for points in self.allPolys[self.uniqueTag]:
-            coords.append([points[1], points[2]])
-        self.myCanvas.create_polygon(coords, fill='', outline='red', width=1, tags=(self.groupTag, self.uniqueTag))
-        #self.SavePolygon()
 
     def SavePolygon(self):
         x_list = []
@@ -506,154 +150,10 @@ class Application:
         self.uniqueTag = None
         self.groupTag = None
 
-    def RectSpotDraw(self):
-        self.rectangleType = 'SPOT AREA'
-        self.RectDraw()
-
-    def RectDraw(self):
-        self.myCanvas.unbind("<Button-1>")  # unbind the spot digitisation
-        self.myCanvas.bind("<ButtonPress-1>", self.RectStartCoords)
-        self.myCanvas.bind("<B1-Motion>", self.RectUpdateCoords)
-        self.myCanvas.bind("<ButtonRelease-1>", self.RectFinalCoords)
-
-    def RectStartCoords(self, event):
-        groupSuffix = ''
-        uniqueSuffix = ''
-        colour = ''
-        if self.rectangleType == 'DUPLICATE':
-            groupSuffix = 'NewDup'
-            uniqueSuffix = 'dupRect'
-            colour = 'red'
-            self.text_label = "Duplicate"
-        if self.rectangleType == 'SPOT AREA':
-            groupSuffix = 'NewSpot'
-            uniqueSuffix = 'spotRect'
-            colour = 'blue'
-            self.text_label="spot area"
-
-        self.spotPointCount += 1
-        self.groupTag = groupSuffix + str(self.spotPointCount)
-        self.uniqueTag = uniqueSuffix + str(self.spotPointCount)
-        self.thisSpotID = self.groupTag
-        self.rectStart_x = self.myCanvas.canvasx(event.x)
-        self.rectStart_y = self.myCanvas.canvasy(event.y)
-        self.rectangle = self.myCanvas.create_rectangle(self.rectStart_x, self.rectStart_y, self.rectStart_x + 1,
-                                                        self.rectStart_y + 1, width=3, outline=colour,
-                                                        activefill='yellow', activeoutline='yellow',
-                                                        tags=(self.groupTag, self.uniqueTag))
-        self.Type = 'RECTANGLE'
-
-    def RectUpdateCoords(self, event):
-        self.updatedX = self.myCanvas.canvasx(event.x)
-        self.updatedY = self.myCanvas.canvasy(event.y)
-        self.myCanvas.coords(self.rectangle, self.rectStart_x, self.rectStart_y, self.updatedX, self.updatedY)
-
-    def RectFinalCoords(self, event):
-        colour = ''
-        if self.rectangleType == 'DUPLICATE':
-            colour = 'red'
-        if self.rectangleType == 'SPOT AREA':
-            colour = 'blue'
-
-        self.myCanvas.create_text(self.rectStart_x, self.rectStart_y - 15, text=self.text_label, fill=colour,font=("Helvetica", 12, "bold"), tags=self.groupTag)
-        self.text_label=''
-        if self.rectangleType == 'SPOT AREA':
-            #self.onClickCreate()
-            self.Save()
-        if self.rectangleType == 'DUPLICATE':
-            self.Save()
-
-    def undo_delete_contour(self):
-        dict_key = list(self.last_contour_deleted.keys())[0]
-        self.contourList[dict_key] = self.last_contour_deleted[dict_key]
-        self.last_contour_deleted.clear()
-        if self.Current_Image== 'TL':
-            self.Load_Image(1)
-        elif self.Current_Image == 'RL':
-            self.Load_Image(0)
+    def display_image(self, image):
+        self.drawing.display_image(image)
 
 
-
-    def DeleteObject(self, event):
-        thisObj = event.widget.find_withtag('current')[0]  # get the object clicked on
-        thisObjID = self.myCanvas.gettags(thisObj)[0]  # find the group tag for the object clicked on
-        if thisObjID != "Image":  # make sure you haven't selected the image
-            if 'line_' in thisObjID: #breaklines don't get written to a json file
-                coords = self.myCanvas.coords(thisObjID)
-                x1 = coords[0]
-                y1 = coords[1]
-                x2 = coords[2]
-                y2 = coords[3]
-                self.pairsList.remove([(x1,y1),(x2,y2)])
-                self.myCanvas.delete(thisObjID)  # delete everything with the same groupID
-            elif 'contour_' in thisObjID:
-                self.last_contour_deleted.clear()  # only keeps the last contour deleted
-                self.last_contour_deleted[thisObjID] = self.contourList[thisObjID]  # store the last contour to be deleted
-                del self.contourList[thisObjID]
-                self.myCanvas.delete(thisObjID)
-            elif 'extcont_' in thisObjID:
-                contour_coords = self.contourList[thisObjID]
-                polygon = Polygon(contour_coords)  # create a shapely polygon
-                representative_point = polygon.representative_point()  # using the shapely polygon, get a point inside the polygon
-                self.threshold = label(self.threshold, background=0, connectivity=None).astype('uint8')
-                blob_label = self.threshold[int(representative_point.y),int(representative_point.x)]
-                if int(blob_label)!=0:
-                    self.threshold[self.threshold==blob_label]=0
-                self.last_contour_deleted.clear() #only keeps the last contour deleted
-                self.last_contour_deleted[thisObjID] = self.contourList[thisObjID] #store the last contour to be deleted
-                del self.contourList[thisObjID]
-                self.myCanvas.delete(thisObjID)
-            else:
-                self.myCanvas.delete(thisObjID)  # delete everything with the same groupID
-                with open(os.path.join(self.folderPath, self.image_iterator_current[0]),
-                          errors='ignore') as jsonFile:  # open the json file for the image
-                    data = json.load(jsonFile)
-
-                for i in range(0, len(data['regions'])):  # If the object already exists in the json
-                    if data['regions'][i]['id'] == thisObjID:
-                        data['regions'].pop(i)  # get rid of it. Don't read further (affects incrementor?)
-                        # print('Already exists in file')
-                        break
-                with open(os.path.join(self.folderPath, self.image_iterator_current[0]), 'w', errors='ignore') as updatedFile:
-                    json.dump(data, updatedFile, indent=4)  # rewrite the json without the object
-                    # print('removed from json')
-                try:
-                    self.unique_sample_numbers[self.currentSample].discard(thisObjID)
-                except:
-                    pass
-        else:
-            pass
-
-    def DigitisePoint(self, drawSpotEvent):
-        self.x0 = self.myCanvas.canvasx(drawSpotEvent.x)
-        self.y0 = self.myCanvas.canvasy(drawSpotEvent.y)
-        x1 = self.x0 - 6
-        x2 = self.x0 + 6
-        y1 = self.y0 - 6
-        y2 = self.y0 + 6
-        self.spotPointCount += 1
-        self.groupTag = 'NewSpot' + str(self.spotPointCount)
-        self.uniqueTag = 'SpotOval' + str(self.spotPointCount)
-        self.thisSpotID = self.groupTag
-        self.currentSpotNumber.set(self.groupTag)
-        self.myCanvas.create_oval(x1, y1, x2, y2, outline='blue', fill='blue', activefill='yellow',
-                                  activeoutline='yellow', width=4, tags=(self.groupTag, self.uniqueTag))
-        self.myCanvas.create_text(x1, y1 - 15, text=self.currentSpotNumber.get(), fill='blue',
-                                  font=("Helvetica", 12, "bold"), tags=self.groupTag)
-        self.onClickCreate()
-        self.Type = 'POINT'
-
-    def UnbindMouse(self):
-        self.myCanvas.unbind("<ButtonPress-1>")  # unbind rectangle digitisation
-        self.myCanvas.unbind("<B1-Motion>")  # unbind rectangle digitisation
-        self.myCanvas.unbind("<ButtonRelease-1>")  # unbind rectangle digitisation
-        self.myCanvas.unbind("<Button-1>")  # unbind point digitisation
-
-    def PointDraw(self):
-        self.myCanvas.unbind("<ButtonPress-1>")  # unbind rectangle digitisation
-        self.myCanvas.unbind("<B1-Motion>")  # unbind rectangle digitisation
-        self.myCanvas.unbind("<ButtonRelease-1>")  # unbind rectangle digitisation
-        self.myCanvas.bind("<Button-1>", self.DigitisePoint)
 
     def Browse(self, case):
         test = np.zeros((5, 5))
@@ -823,169 +323,8 @@ class Application:
         self.errorLabel = Label(self.errorMessageWindow, text=self.error_message_text)
         self.errorLabel.grid(column=0, row=0)
 
-    def Save(self):
-        #if self.rectangleType == 'Duplicate':
-        if self.Type == 'RECTANGLE':
-            with open(os.path.join(self.folderPath, self.image_iterator_current[0]), errors='ignore') as jsonFile:
-                data = json.load(jsonFile)
-            height = abs(self.rectStart_y - self.updatedY)
-            width = abs(self.rectStart_x - self.updatedX)
 
-            if self.rectStart_x < self.updatedX:  # x increases left to right
-                left = self.rectStart_x
-                right = self.updatedX
-            else:
-                left = self.updatedX
-                right = self.rectStart_x
 
-            if self.rectStart_y < self.updatedY:  # y increases top to bottom
-                top = self.rectStart_y
-                bottom = self.updatedY
-            else:
-                top = self.updatedY
-                bottom = self.rectStart_y
-
-            #Region = {"id": self.uniqueTag, "type": self.Type, "tags": ["DUPLICATE"],
-            newRegion = {"id": self.uniqueTag, "type": self.Type, "tags": [self.rectangleType],
-                         "boundingBox": {"height": height, "width": width, "left": left, "top": top},
-                         "points": [{"x": left, "y": top}, {"x": right, "y": top}, {"x": right, "y": bottom},
-                                    {"x": left, "y": bottom}]}
-            data['regions'].append(newRegion)
-
-            with open(os.path.join(self.folderPath, self.image_iterator_current[0]), 'w', errors='ignore') as updatedFile:
-                json.dump(data, updatedFile, indent=4)
-            return None
-
-        if self.Type == 'SCALE':
-            height = 0
-            width = 0
-            left = 0
-            right = 0
-            top = 0
-            bottom = 0
-
-            height = abs(self.lineStart_y - self.updatedY)
-            width = abs(self.lineStart_x - self.updatedX)
-
-            if self.lineStart_x < self.updatedX:  # x increases left to right
-                left = self.lineStart_x
-                right = self.updatedX
-            else:
-                left = self.updatedX
-                right = self.lineStart_x
-
-            if self.lineStart_y < self.updatedY:  # y increases top to bottom
-                top = self.lineStart_y
-                bottom = self.updatedY
-            else:
-                top = self.updatedY
-                bottom = self.lineStart_y
-
-            with open(os.path.join(self.folderPath, self.image_iterator_current[0]), errors='ignore') as jsonFile:
-                data = json.load(jsonFile)
-                newRegion = {"id": self.uniqueTag, "type": self.Type, "tags": ["SCALE"],
-                             "boundingBox": {"height": height, "width": width, "left": left, "top": top},
-                             "points": [{"x": self.lineStart_x, "y": self.lineStart_y},
-                                        {"x": self.updatedX, "y": self.updatedY}]}
-                data['regions'].append(newRegion)
-            with open(os.path.join(self.folderPath, self.image_iterator_current[0]), 'w', errors='ignore') as updatedFile:
-                json.dump(data, updatedFile, indent=4)
-
-            self.scaleLine = None
-            return None
-
-        spotNo = self.currentSpotNumber.get()
-        userText = spotNo.strip()
-
-        try:
-            testNum = float(userText)
-        except:
-            self.error_message_text = "Non-numeric spot number"
-            self.open_error_message_popup_window()
-            return None
-        if userText in self.unique_sample_numbers[self.currentSample]:
-            self.error_message_text = 'Spot number already captured for PDF: ' + str(self.currentSample)
-            self.open_error_message_popup_window()
-            return None
-        if userText.isdecimal():
-            self.error_message_text = 'Integers are not permitted'
-            self.open_error_message_popup_window()
-            return None
-        else:
-            self.unique_sample_numbers[self.currentSample].add(userText)
-        height = 0
-        width = 0
-        left = 0
-        right = 0
-        top = 0
-        bottom = 0
-
-        with open(os.path.join(self.folderPath, self.image_iterator_current[0]), errors='ignore') as jsonFile:
-            data = json.load(jsonFile)
-            anyMatch = False
-            for region in data['regions']:  # If the spot already exists in the jSON
-                if region['id'] == self.thisSpotID:
-                    region['id'] = userText
-                    anyMatch = True
-
-            if anyMatch == False and self.Type == "POINT":  # if it's newly digitised and does not yet exist in the json file, and it's a point
-                newRegion = {"id": userText, "type": self.Type, "tags": ["SPOT"],
-                             "boundingBox": {"height": 5, "width": 5, "left": self.x0, "top": self.y0},
-                             "points": [{"x": self.x0, "y": self.y0}]}
-                data['regions'].append(newRegion)
-
-            if anyMatch == False and self.Type == "RECTANGLE":  # if it's newly digitised and does not yet exist in the json file, and it's a rectangle
-                height = abs(self.rectStart_y - self.updatedY)
-                width = abs(self.rectStart_x - self.updatedX)
-
-                if self.rectStart_x < self.updatedX:  # x increases left to right
-                    left = self.rectStart_x
-                    right = self.updatedX
-                else:
-                    left = self.updatedX
-                    right = self.rectStart_x
-
-                if self.rectStart_y < self.updatedY:  # y increases top to bottom
-                    top = self.rectStart_y
-                    bottom = self.updatedY
-                else:
-                    top = self.updatedY
-                    bottom = self.rectStart_y
-
-                newRegion = {"id": userText, "type": self.Type, "tags": ["SPOT"],
-                             "boundingBox": {"height": height, "width": width, "left": left, "top": top},
-                             "points": [{"x": left, "y": top}, {"x": right, "y": top}, {"x": right, "y": bottom},
-                                        {"x": left, "y": bottom}]}
-                data['regions'].append(newRegion)
-
-        with open(os.path.join(self.folderPath, self.image_iterator_current[0]), 'w', errors='ignore') as updatedFile:
-            json.dump(data, updatedFile, indent=4)
-
-        self.myCanvas.itemconfig(self.labelID, text=userText, state=tk.NORMAL, tags=userText)
-        self.myCanvas.itemconfig(self.thisSpotID, tags=(userText, self.uniqueTag))
-        self.currentSpotTextBox.delete(first=0, last=100)
-        self.spotCaptureWindow.destroy()
-
-    def onClickCreate(self):
-        self.thisSpot = self.myCanvas.find_withtag(self.uniqueTag)[0]
-        all_IDs = self.myCanvas.find_withtag(self.groupTag)
-        for ID in all_IDs:
-            if not ID == self.thisSpot:
-                self.labelID = ID
-
-        self.spotCaptureWindow = Toplevel(root)
-        self.spotCaptureWindow.title("Capture Spot Number")
-        self.spotCaptureWindow.minsize(300, 100)
-        self.spotCaptureLabel = Label(self.spotCaptureWindow, text='Spot ID')
-        self.spotCaptureLabel.grid(column=0, row=0)
-        self.currentSpotNumber = tk.StringVar()
-        self.currentSpotNumber.set('')
-        self.currentSpotTextBox = Entry(self.spotCaptureWindow, width=20, textvariable=self.currentSpotNumber)
-        self.currentSpotTextBox.grid(column=1, row=0)
-        self.currentSpotTextBox.focus()
-        self.saveSpotNo = Button(self.spotCaptureWindow, text='Save', command=self.Save)
-        self.spotCaptureWindow.bind('<Return>', lambda e: self.Save())
-        self.saveSpotNo.grid(column=0, row=1, pady=5)
 
     def load_files_for_spot_capture(self):
         self.browse_for_files_window = Toplevel(root)
@@ -1042,17 +381,16 @@ class Application:
 
     def activate_browse_for_json_folder(self):
         if self.load_json_folder.get()==1:
-            self.json_folder_Label.config(state=NORMAL)
-            self.json_folder_text_box.config(state=NORMAL)
-            self.browse_for_json_folder.config(state = NORMAL)
-            self.json_folder_path.set("")
-
+            state = NORMAL
+            path = ""
         elif self.load_json_folder.get()==0:
-            self.json_folder_Label.config(state=DISABLED)
-            self.json_folder_text_box.config(state=DISABLED)
-            self.browse_for_json_folder.config(state=DISABLED)
-            self.json_folder_path.set(self.image_folder_path.get())
+            state = DISABLED
+            path = self.image_folder_path.get()
 
+        self.json_folder_Label.config(state=state)
+        self.json_folder_text_box.config(state=state)
+        self.browse_for_json_folder.config(state=state)
+        self.model.set_json_folder_path(path)
 
     def browseImages(self):
         self.browseImagesWindow = Toplevel(root)
@@ -1097,7 +435,7 @@ class Application:
         self.MaskTextBox.grid(column=1, row=2)
         self.browseMask = Button(self.browseImagesWindow, text="...",width = 5, command=lambda: self.Browse('Mask'))
         self.browseMask.grid(column=3, row=2, padx=2, pady=5)
-        self.saveMask = Button(self.browseImagesWindow, text="Save Mask", command=lambda: self.SaveMask())
+        self.saveMask = Button(self.browseImagesWindow, text="Save Mask", command=lambda: self.model.SaveMask())
         self.saveMask.grid(column=4, row=2, padx=2, pady=5)
 
         self.Process_Image = Label(self.browseImagesWindow, text="Process Mask Image")
@@ -1108,7 +446,7 @@ class Application:
         self.File_TextBox.grid(column=1, row=3)
         self.Browse_File = Button(self.browseImagesWindow, text="...", width=5, command=lambda: self.Browse('File'))
         self.Browse_File.grid(column=3, row=3, padx=3, pady=5)
-        self.Display_Mask = Button(self.browseImagesWindow, text="Display Mask", width=15, command=lambda: self.DisplayMask())
+        self.Display_Mask = Button(self.browseImagesWindow, text="Display Mask", width=15, command=lambda: self.drawing.DisplayMask())
         self.Display_Mask.grid(column=4, row=3, padx=3, pady=5)
 
 
@@ -1120,40 +458,37 @@ class Application:
         self.Folder_TextBox.grid(column=1, row=4)
         self.Browse_Folder = Button(self.browseImagesWindow, text="...", width=5, command=lambda: self.Browse('Folder'))
         self.Browse_Folder.grid(column=3, row=4, padx=3, pady=5)
-        self.Process_Folder = Button(self.browseImagesWindow, text="Process Folder", width=15,command=lambda: self.ProcessFolder())
+        self.Process_Folder = Button(self.browseImagesWindow, text="Process Folder", width=15,command=lambda: self.model.ProcessFolder())
         self.Process_Folder.grid(column=4, row=4, padx=3, pady=5)
 
-        self.BinariseButton = Button(self.browseImagesWindow, text="Binarise", command=self.binariseImages)
+        self.BinariseButton = Button(self.browseImagesWindow, text="Binarise", command=self.model.binariseImages)
         self.BinariseButton.grid(column=0, row=5, padx=2, pady=5)
-        self.SeparateButton = Button(self.browseImagesWindow, text="Separate Grains", command=self.Separate)
+        self.SeparateButton = Button(self.browseImagesWindow, text="Separate Grains", command=self.model.Separate)
         self.SeparateButton.grid(column=0, row=6, padx=2, pady=5)
-        self.breakLine = Button(self.browseImagesWindow, text="Draw Break Line", command=self.DrawBreakLine)
+        self.breakLine = Button(self.browseImagesWindow, text="Draw Break Line", command=self.drawing.DrawBreakLine)
         self.breakLine.grid(column=0, row=7, padx=2, pady=5)
-        self.saveChanges = Button(self.browseImagesWindow, text="Save Changes", command=self.SaveBreakChanges)
+        self.saveChanges = Button(self.browseImagesWindow, text="Save Changes", command=self.model.SaveBreakChanges)
         self.saveChanges.grid(column=0, row=8, padx=2, pady=5)
-        self.measureShapes = Button(self.browseImagesWindow, text="Measure Shapes",command=self.MeasureShapes)
+        self.measureShapes = Button(self.browseImagesWindow, text="Measure Shapes",command=self.model.MeasureShapes)
         self.measureShapes.grid(column=0, row=9, padx=2, pady=5)
         self.pushDB = Button(self.browseImagesWindow, text="Push to DB",command=self.DBPush)
         self.pushDB.grid(column=0, row=10, padx=2, pady=5)
-        self.moveSpot = Button(self.browseImagesWindow, text="Reposition spot", command=self.PointMove)
+        self.moveSpot = Button(self.browseImagesWindow, text="Reposition spot", command=self.drawing.PointMove)
         self.moveSpot.grid(column=0, row=11, padx=2, pady=5)
-        self.grain_boundary_capture = Button(self.browseImagesWindow, text ="Grain Boundary Capture [p]", command=self.BoundaryDraw)
+        self.grain_boundary_capture = Button(self.browseImagesWindow, text ="Grain Boundary Capture [p]", command=self.drawing.BoundaryDraw)
         self.grain_boundary_capture.grid(column=0, row=12, padx=2, pady=5)
 
-        #self.insertPolygonPoint = Button(self.browseImagesWindow, text="insert Point", command=self.EditPolygon)
-        #self.insertPolygonPoint.grid(column=0, row=8, padx=2, pady=5)
-        #self.deletePolygonPoint = Button(self.browseImagesWindow, text="delete Point", command=self.EditPolygon)
-        #self.deletePolygonPoint.grid(column=0, row=9, padx=2, pady=5)
-
-        self.undo_delete = Button(self.browseImagesWindow, text="Undo Delete Contour", command=self.undo_delete_contour)
+        self.undo_delete = Button(self.browseImagesWindow, text="Undo Delete Contour", command=self.model.undo_delete_contour)
         self.undo_delete.grid(column=0, row=13, padx=2, pady=5)
+
+        self.write_to_csv_button = Button(self.browseImagesWindow, text="Save to CSV", command=self.write_to_csv)
+        self.write_to_csv_button.grid(column=0, row=14, padx=2, pady=5)
 
     def ProcessFolder(self):
         self.ProcessFolderFlag = True
         for path,folder,files in os.walk(self.Folder_Location.get()):
             for name in files:
                 self.currentMask = self.Folder_Location.get()+'/'+name #the file path of the current mask we're processing
-                print('current mask: ', self.currentMask)
                 self.DisplayMask()
                 self.MeasureShapes()
                 self.DBPush()
@@ -1166,62 +501,60 @@ class Application:
         rl_path = ''
         tl_path = ''
         if path != '':
-            self.threshold = cv2.imread(self.File_Location.get())[:, :, 0]
-            self.threshold[self.threshold > 0] = 255
-           # self.threshold = label(self.threshold,background=0, connectivity=None).astype('uint8')
-            #labelim = label(image_open, background=0, connectivity=None)
-            #self.threshold = labelim.astype('uint8')
-            jsonName = '_'.join(path.split('/')[-1].split('_')[:3])+'.json'
-            sampleid = jsonName.split('_')[0]
-            t_regionID = path.split('/')[-1].split('_')
-            regionID = '_'.join(t_regionID[4:]).replace('.png', '')
-
-            if self.json_folder_location is None:
+            region = self.model.load_mask_from_file(path)
+            if region == None:
                 self.error_message_text = "JSON file location has not been defined"
                 self.open_error_message_popup_window()
                 return
-            else:
-                with open(os.path.join(self.json_folder_location,jsonName), errors='ignore') as jsonFile:
-                    data = json.load(jsonFile)
-                for region in data["regions"]:
-                    if region["id"] == regionID:
-                        rl_path = region["RL_Path"] if "RL_Path" in region else self.RLPath.get()
-                        tl_path = region["TL_Path"] if "TL_Path" in region else self.TLPath.get()
-                        mask_path = region["Mask_Path"].split('\\')[0] if "Mask_Path" in region else self.MaskFolderLocation.get()
-                self.RLTextBox.delete(0, END)
-                self.RLTextBox.insert(0, rl_path)
-                self.TLTextBox.delete(0, END)
-                self.TLTextBox.insert(0, tl_path)
-                self.MaskTextBox.delete(0, END)
-                self.MaskTextBox.insert(0, mask_path)
+
+            rl_path = region["RL_Path"] if "RL_Path" in region else self.RLPath.get()
+            tl_path = region["TL_Path"] if "TL_Path" in region else self.TLPath.get()
+            mask_path = region["Mask_Path"].split('\\')[0] if "Mask_Path" in region else self.MaskFolderLocation.get()
+
+            self.RLTextBox.delete(0, END)
+            self.RLTextBox.insert(0, rl_path)
+            self.TLTextBox.delete(0, END)
+            self.TLTextBox.insert(0, tl_path)
+            self.MaskTextBox.delete(0, END)
+            self.MaskTextBox.insert(0, mask_path)
 
         elif self.ProcessFolderFlag == True:
-            self.threshold = cv2.imread(self.currentMask)[:, :, 0]
+            self.model.load_current_mask()
 
         image_pill = Image.fromarray(self.threshold)
-        self.img = ImageTk.PhotoImage(image=image_pill)
-        self.myCanvas.delete('all')
-        self.myCanvas.configure(scrollregion=[0, 0, self.img.width(), self.img.height()])
-        self.myCanvas.create_image(0, 0, image=self.img, anchor=NW, tags="Image")
+        self.drawing.display_image(image_pill)
+        self.model.extract_contours_from_image()
 
-        contoursFinal, hierarchyFinal = cv2.findContours(self.threshold, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-        self.contourList = {}
-        count_contour = 0
-        for i in range(len(contoursFinal)):
-            groupID = 'extcont_' + str(count_contour)
-            uniqueID = 'extcont_' + str(count_contour)
-            squeeze = np.squeeze(contoursFinal[i])
-            self.contourList[uniqueID] = squeeze
-            poly_coords = []
-            if len(contoursFinal[i]) <=1:
-                pass
-            else:
-                for coords in squeeze:
-                    poly_coords.append(coords[0])
-                    poly_coords.append(coords[1])
-                self.myCanvas.create_polygon(poly_coords, fill='', outline='red', activeoutline='yellow', width=3,
-                                         tags=(groupID, uniqueID))
-            count_contour += 1
+    def write_to_csv(self):
+        filepath = filedialog.asksaveasfilename(defaultextension = '.csv', filetypes = [("CSV Files","*.csv")], title="Save As")
+        #filepath ='C:/Users/20023951/Documents/PhD/GSWA/test_masks/shape_measurements.csv'
+        colArray = ['sampleid', 'image_id', 'grain_number','grain_centroid', 'grain_spots', 'area', 'equivalent_diameter', 'perimeter', 'minor_axis_length','major_axis_length',
+                   'solidity', 'convex_area', 'formFactor','roundness', 'compactness', 'aspectRatio', 'minFeret', 'maxFeret', 'contour', 'image_dimensions','mask_image']
+
+        with open(filepath, mode='w',newline='') as csv_file:
+            csv_writer = csv.writer(csv_file, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)
+            csv_writer.writerow(colArray)
+
+            for row in self.dfShapeRounded.itertuples(False):
+                data = []
+                if row[4] != ' ':
+                    spots = row[4].split(',')
+                    for spot in spots:
+                        data = []
+                        for x in range(len(row)):
+                            if x != 4:
+                                data.append(row[x])
+                            else:
+                                data.append(spot)
+                        csv_writer.writerow(data)
+
+                else:
+                    data = []
+                    for i in range(len(row)):
+                        data.append(row[i])
+                    csv_writer.writerow(data)
+
+
 
     def DBPush(self):
         # push the shape descriptors to the shape_descriptor table
@@ -1315,96 +648,11 @@ class Application:
 
         cv2.imwrite(maskPath, self.threshold)
 
-    def DrawBreakLine(self):
-        # print('DrawScale')
-        self.myCanvas.unbind("<Button-1>")
-        self.myCanvas.unbind("<ButtonPress-1>")
-        self.myCanvas.unbind("<B1-Motion>")
-        self.myCanvas.unbind("<ButtonRelease-1>")
-        self.myCanvas.bind("<ButtonPress-1>", self.BreakLineStart)
-        self.myCanvas.bind("<B1-Motion>", self.BreakLineUpdate)
-        self.myCanvas.bind("<ButtonRelease-1>", lambda e: self.SaveNewBreakLine())
 
-    def BreakLineStart(self, event):
-        t_ID = 'line_' + str(datetime.datetime.now())
-        ID = t_ID.replace(' ', '')
-        colour = 'red'
-        self.lineStart_x = self.myCanvas.canvasx(event.x)
-        self.lineStart_y = self.myCanvas.canvasy(event.y)
-        self.Line = self.myCanvas.create_line(self.lineStart_x, self.lineStart_y, self.lineStart_x + 1,
-                                              self.lineStart_y + 1, width=3, fill=colour, activefill='yellow',tags=(ID))
 
-    def BreakLineUpdate(self, moveEvent):
-        self.myCanvas.unbind("<ButtonPress-1>")
-        self.updatedX = self.myCanvas.canvasx(moveEvent.x)
-        self.updatedY = self.myCanvas.canvasy(moveEvent.y)
-        self.myCanvas.coords(self.Line, self.lineStart_x, self.lineStart_y, self.updatedX, self.updatedY)
 
-    def SaveNewBreakLine(self):
-        self.pairsList.append([(self.lineStart_x, self.lineStart_y), (self.updatedX, self.updatedY)])
 
-    def SaveBreakChanges(self):
-        updatedMask = self.convert_contours_to_mask_image()
 
-        if self.new_boundary != None: # if the user has digitised a new grain boundary manually
-            points = np.array(self.new_boundary,'int32')
-            updatedMask = cv2.fillPoly(updatedMask,[points], color=(255,255,255))
-            self.new_boundary = None
-
-        if self.pairsList != []:
-            pairs = self.pairsList
-            for p in pairs:
-                x1 = p[0][0]
-                y1 = p[0][1]
-                x2 = p[1][0]
-                y2 = p[1][1]
-                updatedMask = cv2.line(updatedMask, (int(x1), int(y1)), (int(x2),int(y2)), (0,0,0),2)
-            self.pairsList = []
-
-        self.threshold = updatedMask
-        #kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (9, 9))
-        #image_open = cv2.morphologyEx(self.threshold, cv2.MORPH_OPEN, kernel)
-        #image_open[image_open > 0] = 255
-        #labelim = label(image_open, background=0, connectivity=None)
-        labelim = label(self.threshold, background=0, connectivity=None)
-        self.threshold = labelim.astype('uint8')
-        #mask_image = copy.deepcopy(self.threshold)
-        #mask_image_colour = cv2.cvtColor(mask_image, cv2.COLOR_GRAY2RGB)
-        #mask_image_colour[:,:,1] = 0
-        #mask_image_colour[:, :, 2] = 0
-        #mask_image_colour[mask_image_colour[:, :, 0]>0] = 255
-        if self.TLPath.get() != '' and self.Current_Image=='TL':
-            original_Image = cv2.imread(self.TLPath.get())
-            #output_Image = cv2.addWeighted(original_Image,0.7, mask_image_colour, 0.3, 0)
-        elif self.RLPath.get() != '' and self.Current_Image=='RL':
-            original_Image = cv2.imread(self.RLPath.get())
-            #output_Image = cv2.addWeighted(original_Image, 0.7, mask_image_colour, 0.3, 0)
-        #else:
-            #output_Image = mask_image_colour
-        #view the image
-        #image_pill = Image.fromarray(output_Image)
-        image_pill = Image.fromarray(original_Image)
-        self.img = ImageTk.PhotoImage(image=image_pill)
-        self.myCanvas.delete('all')
-        self.myCanvas.configure(scrollregion=[0, 0, self.img.width(), self.img.height()])
-        self.myCanvas.create_image(0, 0, image=self.img, anchor=NW, tags="Image")
-
-        #paint the contours on
-        contoursFinal, hierarchyFinal = cv2.findContours(self.threshold, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-        count_contour = 0
-        self.contourList.clear()
-        for i in range(len(contoursFinal)):
-            groupID = 'extcont_' + str(count_contour)
-            uniqueID = 'extcont_' + str(count_contour)
-            squeeze = np.squeeze(contoursFinal[i])
-            self.contourList[uniqueID] = squeeze
-            poly_coords = []
-            for coords in squeeze:
-                poly_coords.append(coords[0])
-                poly_coords.append(coords[1])
-            self.myCanvas.create_polygon(poly_coords, fill='', outline='red', activeoutline='yellow', width=3,
-                                         tags=(groupID, uniqueID))
-            count_contour += 1
 
     def MeasureShapes(self):
         self.jsonName=''
@@ -1418,7 +666,7 @@ class Application:
         self.threshold = image_clear_uint8
 
         self.contourList={}
-        fileLocation = 'C:/Users/20023951/Documents/PhD/GSWA/Geochem_Interrogate/t2_inv1_files'
+        fileLocation = self.json_folder_path.get()#'C:/Users/20023951/Documents/PhD/GSWA/Geochem_Interrogate/t2_inv1_files'
         if self.File_Location.get() != '': #if we're processing a single mask image
             fPath = self.File_Location.get()
         elif self.ProcessFolderFlag == True: #if w are processing an entire folder of masks
@@ -1433,6 +681,8 @@ class Application:
 
         imageDimensions = ''  # this will record the XY dimensions of the cropped image, so that the contours can be redrawn on a blank image in the event that the cropped image  file is ever lost
         spot = False
+        spotList = []
+        dupList = []
         for path, folder, files in os.walk(fileLocation):
             for name in files:
                 if name == self.jsonName:  # find the json file that relates to the pdf page (image) under consideration
@@ -1443,7 +693,15 @@ class Application:
                         data = json.load(jsonFile)
 
                     for region in data['regions']:
-                        if region['id'] == regionID:
+                        if regionID =="": #if the photo  in question does not comprise subregions (i.e. not a photo collage)
+                            imageTop = 0  # find out the starting point (top left) of the photo under consideration
+                            imageLeft = 0
+                            imageWidth = data["asset"]["size"]["width"]
+                            imageHeight = data["asset"]["size"]['height']
+                            imageDimensions = str(imageTop) + ',' + str(imageLeft) + ',' + str(
+                                imageTop + imageWidth) + ',' + str(
+                                imageLeft + imageHeight)  # record those photo dimensions for use later
+                        elif region['id'] == regionID: #if the photo in question is a subregion of the original image
                             imageTop = region['boundingBox']['top']  # find out the starting point (top left) of the photo under consideration
                             imageLeft = region['boundingBox']['left']
                             imageWidth = region['boundingBox']['width']
@@ -1491,9 +749,11 @@ class Application:
                             y = region['boundingBox']['top'] + (region['boundingBox']['height'] / 2)
                             newX = x - imageLeft
                             newY = y - imageTop
-                            if x > imageLeft and x < imageLeft + imageWidth:
-                                if y > imageTop and y < imageTop + imageHeight:
-                                    dupList.append([newX, newY])
+                            if x >= imageLeft:
+                                if x <= imageLeft + imageWidth:
+                                    if y >= imageTop:
+                                        if y <= imageTop + imageHeight:
+                                            dupList.append([newX, newY])
                     if spot == False:
                         print('No spot in image')
 
@@ -1506,11 +766,11 @@ class Application:
                         else:
                             micPix = 30 / scale
 
-        #here we remove all those grains that were tagged as duplicates in the json file
-        for duplicate in dupList:
-            label = self.threshold[int(duplicate[1]), int(duplicate[0])]
-            if label != 0:
-                self.threshold[self.threshold == label] = 0
+                    #here we remove all those grains that were tagged as duplicates in the json file
+            for duplicate in dupList:
+                label = self.threshold[int(duplicate[1]), int(duplicate[0])]
+                if label != 0:
+                    self.threshold[self.threshold == label] = 0
 
         self.contourList = {}
         contoursFinal, hierarchyFinal = cv2.findContours(self.threshold, cv2.RETR_TREE,cv2.CHAIN_APPROX_SIMPLE)  # cv2.CHAIN_APPROX_SIMPLE, cv2.RETR_EXTERNAL
@@ -1593,8 +853,8 @@ class Application:
             solidity_List.append(solidity)
             compactness_List.append(compactness)
             aspectRatio_List.append(aspectRatio)
-            maxFeret_List.append(maxFeret)
-            minFeret_List.append(minFeret)
+            maxFeret_List.append(maxFeret*micPix)
+            minFeret_List.append(minFeret*micPix)
             imDimensions_List.append(imageDimensions)
             if self.maskPath != '':
                 maskImage_List.append(self.maskPath)  # path is defined in the previous code block. This  is where image2 is saved. It's a file path.
@@ -1611,40 +871,27 @@ class Application:
             self.threshold[self.threshold>0]=255
             img_to_display = np.stack((self.threshold,)*3, axis=-1)
 
+        #cv2.imwrite('C:/Users/20023951/Documents/PhD/Reporting/Paper1_ZirconSeparationUtility/CaseStudy/CaseStudy_MaduraShelf/mask_img.jpg', img_to_display)
         for i in range(len(label_List)):
-            img_to_display = cv2.circle(img_to_display, (int(centroid_List[i][1]), int(centroid_List[i][0])), 3, (0, 0, 255), 2)
-            cv2.putText(img_to_display, str(label_List[i]), (int(centroid_List[i][1]), int(centroid_List[i][0])), cv2.FONT_HERSHEY_DUPLEX, 0.5, (0, 0, 255))
+            #img_to_display = cv2.circle(img_to_display, (int(centroid_List[i][1]), int(centroid_List[i][0])), 3, (0, 0, 255), 2)
+            cv2.putText(img_to_display, str(label_List[i]), (int(centroid_List[i][1]-2), int(centroid_List[i][0]-2)), cv2.FONT_HERSHEY_DUPLEX, 0.3, (0, 0, 255))
 
-        for duplicate in dupList:
-            img_to_display = cv2.circle(img_to_display, (int(duplicate[0]), int(duplicate[1])), 3, (255, 255, 255), 2)
-            cv2.putText(img_to_display, 'Duplicate', (int(duplicate[0]) + 5, int(duplicate[1]) + 5), cv2.FONT_HERSHEY_DUPLEX,0.5, (255, 255, 255))
+        #for duplicate in dupList:
+            #img_to_display = cv2.circle(img_to_display, (int(duplicate[0]), int(duplicate[1])), 1, (255, 255, 255), 1)
+            #cv2.putText(img_to_display, 'Duplicate', (int(duplicate[0]) + 5, int(duplicate[1]) + 5), cv2.FONT_HERSHEY_DUPLEX,0.5, (255, 255, 255))
+
+        #cv2.imwrite('C:/Users/20023951/Documents/PhD/Reporting/Paper1_ZirconSeparationUtility/CaseStudy/CaseStudy_MaduraShelf/labeled_mask.jpg',img_to_display)
 
         image_pill = Image.fromarray(img_to_display)
-        self.img = ImageTk.PhotoImage(image = image_pill)
+        self.drawing.display_image(image_pill)
+        self.model.extract_contours_from_image("extcont")
 
-        self.myCanvas.delete('all')
-        self.myCanvas.configure(scrollregion=[0, 0, self.img.width(), self.img.height()])
-        self.myCanvas.create_image(0, 0, image=self.img, anchor=NW, tags="Image")
-
-        #now draw the grain boundaries on
-        count_contour = 0
-        for i in range(len(label_List)):
-            groupID ='extcont_'+str(count_contour)
-            uniqueID='extcont_'+str(count_contour)
-            squeeze = np.squeeze(contoursFinal[i])
-            self.contourList[uniqueID]=squeeze
-            poly_coords = []
-            for coords in squeeze:
-                poly_coords.append(coords[0])
-                poly_coords.append(coords[1])
-            self.myCanvas.create_polygon(poly_coords, fill='', outline='red', activeoutline='yellow', width=3,tags=(groupID, uniqueID))
-            count_contour += 1
         for spot in spotList:
             spotX = spot[0]
             spotY = spot[1]
             spotID = spot[2]
-            self.myCanvas.create_oval(spotX-6,spotY-6, spotX+6, spotY+6, fill='lightgreen',outline='green', width=2, activefill='yellow', activeoutline='yellow', tags=('s_'+str(spotID), 'spot_'+str(spotID)))
-            self.myCanvas.create_text(spotX-10,spotY-10,fill='green', text=spotID, tags=('s_'+str(spotID), 'spotno_'+str(spotID)))
+            self.myCanvas.create_oval(spotX-5,spotY-5, spotX+5, spotY+5, fill='lightgreen',outline='green', width=1, activefill='yellow', activeoutline='yellow', tags=('s_'+str(spotID), 'spot_'+str(spotID)))
+            self.myCanvas.create_text(spotX-7,spotY-7,fill='green', text=spotID, tags=('s_'+str(spotID), 'spotno_'+str(spotID)))
 
         # Create a pandas table for all these elements:
         data = {'sampleid': sampleid_List,
@@ -1735,37 +982,16 @@ class Application:
             imCopy = cv2.imread(fileTL)
 
         # Once the image is binarised, get the contours
-        contours, hierarchy = cv2.findContours(self.threshold, cv2.RETR_TREE,cv2.CHAIN_APPROX_SIMPLE)  # cv2.CHAIN_APPROX_SIMPLE, cv2.RETR_EXTERNAL
-        self.myCanvas.delete('all')
+        self.erode_small_artifacts(self.threshold)
         image_pill = Image.fromarray(imCopy)
-        self.img = ImageTk.PhotoImage(image=image_pill)
-        self.myCanvas.configure(scrollregion=[0, 0, self.img.width(), self.img.height()])
-        self.myCanvas.create_image(0, 0, image=self.img, anchor=NW, tags="Image")
+        self.drawing.display_image(image_pill)
 
-        areaList=[]
-        count_contour = 0
-        for cnt in contours:
-            uniqueID = 'contour_'+str(count_contour)
-            groupID = 'contour_'+str(count_contour)
-            if len(cnt) < 3:
-                pass
-            else:
-                contArea = cv2.contourArea(cnt, False)
+        def filter_polygon_by_area(contour):
+            area = cv2.contourArea(contour, False)
+            return area>=50
 
-                if contArea == 0:  # if it's not a closed contour
-                    pass
-                elif contArea < 50:  # in some cases we may want to exclude very small shapes, too...this value might be  case dependent
-                    pass
-                else:
-                    areaList.append(contArea)
-                    squeeze = np.squeeze(cnt)
-                    poly_coords=[]
-                    for coords in squeeze:
-                        poly_coords.append(coords[0])
-                        poly_coords.append(coords[1])
-                    self.myCanvas.create_polygon(poly_coords, fill='', outline='red', activeoutline='yellow', width=2,tags=(groupID, uniqueID))
-                    self.contourList[uniqueID]=squeeze
-            count_contour += 1
+        self.model.extract_contours_from_image('contour',filter_polygon_by_area)
+
 
     def convert_contours_to_mask_image(self):
         mask = np.zeros((self.height, self.width), dtype=np.uint8)
@@ -1779,7 +1005,7 @@ class Application:
         return mask
 
     def erode_small_artifacts(self,mask):
-        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE,(9, 9))  # this large structuring element is designed to  remove bubble rims
+        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE,(2, 2))  # this large structuring element is designed to  remove bubble rims
         opening = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
         opening[opening == 1] = 255
         opening_uint8 = opening.astype('uint8')
@@ -1789,7 +1015,7 @@ class Application:
     def Separate(self):
         reconstructed_points = [] #for testing
         self.threshold = self.convert_contours_to_mask_image()
-        #self.erode_small_artifacts(mask)
+        #
 
         contours, hierarchy = cv2.findContours(self.threshold, cv2.RETR_TREE,cv2.CHAIN_APPROX_SIMPLE)  # get the new contours of the eroded masks
         hierarchy = np.squeeze(hierarchy)
@@ -1819,8 +1045,11 @@ class Application:
                 composite_contour.curvature_values, composite_contour.cumulative_distance = calculateK(composite_contour.reconstructed_points, composite_contour.coefficients) #composite_contour.reconstructed_points
                 curvature_maxima_length_positions, curvature_maxima_values, curvature_maxima_x, curvature_maxima_y, non_maxima_curvature = FindCurvatureMaxima(composite_contour.curvature_values,composite_contour.cumulative_distance,composite_contour.reconstructed_points)
                 node_curvature_values, node_distance_values, node_x, node_y = IdentifyContactPoints(curvature_maxima_length_positions, curvature_maxima_values, curvature_maxima_x, curvature_maxima_y, non_maxima_curvature)
+
                 if node_curvature_values != []:
                     composite_contour.max_curvature_values = node_curvature_values
+                    composite_contour.max_curvature_distance = node_distance_values
+                    #create_curvature_distance_plot(composite_contour)
                 else:
                     composite_contour.keep_contour = False
 
@@ -1841,7 +1070,11 @@ class Application:
         if self.TLPath.get() != '':
             imgTL = cv2.imread(self.TLPath.get())
             plt.imshow(imgTL, cmap='Greys_r')
-        plt.imshow(self.threshold, cmap='jet', alpha=0.5)
+        elif self.RLPath.get()!='':
+            imgRL = cv2.imread(self.RLPath.get())
+            plt.imshow(imgRL, cmap='Greys_r')
+        else:
+            plt.imshow(self.threshold, cmap='jet', alpha=0.5)
         for contour in composite_contour_list:
             if contour.keep_contour == False:
                 continue
@@ -1852,14 +1085,17 @@ class Application:
             #    text= str(xmax[i])+" | "+str(ymax[i])
              #   plt.text(xmax[i]+1,ymax[i]+3,c = 'red', s=text, size="medium")
 
-            plt.scatter(xmax,ymax,facecolors='none',edgecolors='red',s=10,linewidth=1)
+            sc=plt.scatter(xmax,ymax,facecolors='none',edgecolors='red',s=7,linewidth=1)
+            #cbaxis = fig.add_axes([0.9,0.1,0.03,0.8])
+            #cbar = plt.colorbar(sc, cax=cbaxis)
+            #cbar.set_label('Curvature (K)', rotation=270, labelpad=20)
         plt.subplots_adjust(top=1, bottom=0, right=1, left=0, hspace=0, wspace=0)
+
         canvas_data, (canvas_width,canvas_height) = canvas.print_to_buffer()  # taken from here: https://matplotlib.org/3.1.1/gallery/user_interfaces/canvasagg.html
         image_matrix = np.frombuffer(canvas_data, np.uint8).reshape((canvas_height, canvas_width, 4))
         image_pill = Image.frombytes("RGBA", (canvas_width, canvas_height), image_matrix)
-        self.img = ImageTk.PhotoImage(image=image_pill)
-        self.myCanvas.configure(scrollregion=[0, 0, self.img.width(), self.img.height()])
-        self.myCanvas.create_image(0, 0, image=self.img, anchor=NW, tags="Image")
+        self.drawing.display_image(image_pill)
+
 
         # now link all nodes within the groups:
         for group in groups:
@@ -1882,7 +1118,7 @@ class Application:
                 self.pairsList.append([(x1, y1), (x2, y2)])
                 ID = 'line_' + str(self.count)
                 self.count += 1
-                self.myCanvas.create_line(x1, y1, x2, y2, width=3, fill='red', activefill='yellow', tags=(ID))
+                self.myCanvas.create_line(x1, y1, x2, y2, width=2, fill='red', activefill='yellow', tags=(ID))
 
     def onClick(self, event):
         thisSpot = event.widget.find_withtag('current')[0]
@@ -1911,10 +1147,6 @@ class Application:
 
     def DisplayImages(self):
         #This is for cycling through images associated with json files when capturing spots
-        result = True
-        self.myCanvas.delete('all')
-        im = ''
-        jf = ''
 
         if self.imgCount < len(self.jsonList) and self.imgCount > -1:
             self.image_iterator_current = self.jsonList[self.imgCount]
@@ -1926,9 +1158,7 @@ class Application:
             #re.sub(pattern, "",im)  # don't remove this. This tracks the sample number and is used for tracking unique sample id's per sample
             iterator = self.sampleList.index(self.currentSample) + 1
             fileName = os.path.join(self.folderPath, im)
-            self.img = ImageTk.PhotoImage(Image.open(fileName))
-            self.myCanvas.configure(scrollregion=[0, 0, self.img.width(), self.img.height()])
-            self.myCanvas.create_image(0, 0, image=self.img, anchor=NW, tags="Image")
+            self.drawing.display_image(Image.open(fileName))
             self.label['text'] = im + '  | Sample ' + str(iterator) + ' of ' + str(len(self.sampleList))
         else:
             result = False
@@ -1968,10 +1198,10 @@ class Application:
                     spotID = region['id']
                     x1 = region['points'][0]['x']
                     y1 = region['points'][0]['y']
-                    self.myCanvas.create_oval(x1 - 6, y1 - 6, x1 + 6, y1 + 6, width=4, outline='blue', fill='blue',
+                    self.myCanvas.create_oval(x1 - 6, y1 - 6, x1 + 6, y1 + 6, width=2, outline='blue', fill='blue',
                                               activefill='yellow', activeoutline='yellow',
                                               tags=(spotID, 'SpotPoint' + str(self.spotCount)))
-                    self.myCanvas.create_text(x1, y1 - 15, text=spotID, fill='blue', font=("Helvetica", 12, "bold"),tags=spotID)
+                    self.myCanvas.create_text(x1, y1 - 5, text=spotID, fill='white', font=("Helvetica", 8, "bold"),tags=spotID)
                     self.myCanvas.tag_bind('spot' + str(self.spotCount), '<ButtonPress-1>', self.onClick)
 
                 if region['tags'][0] == 'RL' and region['type'] == 'POLYGON':
@@ -2006,7 +1236,6 @@ class Application:
 
     def Load_Image(self,image_to_display):
         #This is for optionally loading either the TL or RL image
-        self.myCanvas.delete('all')
         image_pill=None
         if image_to_display == 0:
             self.Current_Image = 'RL'
@@ -2031,41 +1260,11 @@ class Application:
             self.height = img.shape[0]
             image_pill = Image.fromarray(img)
 
-        self.img = ImageTk.PhotoImage(image=image_pill)
-        self.myCanvas.configure(scrollregion=[0, 0, self.img.width(), self.img.height()])
-        self.myCanvas.create_image(0, 0, image=self.img, anchor=NW, tags="Image")
+        self.drawing.display_image(image_pill)
 
         self.Draw_Contours()
 
-    def Draw_Contours(self):
-        # paint the contours on
-        #contoursFinal, hierarchyFinal = cv2.findContours(self.threshold, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-        #count_contour = 0
-
-        for key,value in self.contourList.items():
-            poly_coords = []
-            uniqueID = key
-            groupID = key
-            if len(value) == 1:
-                pass
-            else:
-                for coords in value:
-                    poly_coords.append(coords[0])
-                    poly_coords.append(coords[1])
-                self.myCanvas.create_polygon(poly_coords, fill='', outline='red', activeoutline='yellow', width=3,tags=(groupID, uniqueID))
-        #for i in range(len(contoursFinal)):
-            #groupID = 'extcont_' + str(count_contour)
-            #uniqueID = 'extcont_' + str(count_contour)
-            #squeeze = np.squeeze(contoursFinal[i])
-            #self.contourList[uniqueID] = squeeze
-            #poly_coords = []
-           # for coords in squeeze:
-           #     poly_coords.append(coords[0])
-           #     poly_coords.append(coords[1])
-            #self.myCanvas.create_polygon(poly_coords, fill='', outline='red', activeoutline='yellow', width=3,
-           #                              tags=(groupID, uniqueID))
-            #count_contour += 1
-
 root = Tk()
-my_gui = Application(root)
+model = Model()
+my_gui = Application(root,model)
 root.mainloop()

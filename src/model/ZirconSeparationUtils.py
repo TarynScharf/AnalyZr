@@ -33,7 +33,8 @@ from statistics import mean
 
 def getScale(jF,location, tag):
     sampleid = jF.split('_')[0]
-    lengthList = []
+    spot_length_list = []
+    scale_length_list=[]
     for  path, folder, files in os.walk(location):
         for name in files:
             sample = name.split('_')[0]
@@ -43,19 +44,21 @@ def getScale(jF,location, tag):
                     data = json.load(jFile)
                 for region in data['regions']:
                     if region['type'] == 'RECTANGLE' and region['tags'][0]==tag:
-                        lengthList.append(region['boundingBox']['height'])
-                        lengthList.append(region['boundingBox']['width'])
-    if len(lengthList)==0:
+                        spot_length_list.append(region['boundingBox']['height'])
+                        spot_length_list.append(region['boundingBox']['width'])
+                    elif region['type']=="scale" and region['tags'][0]==tag:
+                        scale_length_list.append(region['boundingBox']['height'])
+    if len(spot_length_list)==0:
         return -1
 
-    aveLength = mean(lengthList)
+    aveLength = mean(spot_length_list)
     return aveLength
 
 def removeSmallObjects(img, factor = 6):
     
     labelim = label(img, background=0, connectivity=None)
     props = regionprops(labelim)
-    cv2.imwrite('C:/Users/20023951/Documents/PhD/GSWA/Geochem_Interrogate/test/labelim.png', labelim)
+    #cv2.imwrite('C:/Users/20023951/Documents/PhD/GSWA/Geochem_Interrogate/test/labelim.png', labelim)
     areaList = []
     for x in range (0,len(props)):
         areaList.append(props[x].area)
@@ -68,7 +71,7 @@ def removeSmallObjects(img, factor = 6):
         min_size = maxArea/factor
         #print('min_size', min_size)
         remSmall = remove_small_objects(labelim,min_size, in_place=False)
-        cv2.imwrite('C:/Users/20023951/Documents/PhD/GSWA/Geochem_Interrogate/test/remSmall.png', remSmall)
+        #cv2.imwrite('C:/Users/20023951/Documents/PhD/GSWA/Geochem_Interrogate/test/remSmall.png', remSmall)
     
     return remSmall
 
@@ -598,7 +601,7 @@ def IdentifyContactPoints(k_maxima_length_positions, k_maxima_values, k_maxima_x
         if i in maxima_to_remove:
             pass
         else:
-            contact_point_k_values.append(k_maxima_y[i])
+            contact_point_k_values.append(k_maxima_values[i])
             contact_point_length_positions.append(k_maxima_length_positions[i])
             contact_point_x.append(k_maxima_x[i])
             contact_point_y.append(k_maxima_y[i])
@@ -718,9 +721,7 @@ def plot(points = [],contour1 = [], contour2= []):
     plt.show()
 
 def filter_pairs_with_length_to_volume_ratio(pairs,contour_group,threshold=0.8):
-    for p in pairs:
-        point = [p[1],p[0]]
-        plot(p)
+
     sorted_distance_pairs_list = sorted(pairs, key=lambda x: calculate_distance_between_points(x[0],x[1]), reverse=False)
     filtered_pairs=[]
     for distance_pair in sorted_distance_pairs_list:
@@ -734,16 +735,43 @@ def filter_pairs_with_length_to_volume_ratio(pairs,contour_group,threshold=0.8):
         else:
             if contour2_initialised == True and contour2_finalised == True: #if both nodes are on the parent contour, apply filter to decide whether the points are kept
                 #when both nodes exist on the parent contour, and the subcontours (contour1 and contour2 produced by splitting the parent contour with the node pair) both contain points
-                contour1_area = math.sqrt(cv2.contourArea(np.array(contour1)))
-                contour2_area = math.sqrt(cv2.contourArea(np.array(contour2)))
-                distance = calculate_distance_between_points(distance_pair[0], distance_pair[1])
-                length_volume_ratio = distance/(min(contour1_area, contour2_area))
-                if length_volume_ratio>threshold:
+                try:
+                    contour1_area = math.sqrt(cv2.contourArea(np.array(contour1)))
+                    contour2_area = math.sqrt(cv2.contourArea(np.array(contour2)))
+                    distance = calculate_distance_between_points(distance_pair[0], distance_pair[1])
+                    length_volume_ratio = distance/(min(contour1_area, contour2_area))
+                    if length_volume_ratio>threshold:
+                        continue
+                except:
                     continue
 
             filtered_pairs.append([distance_pair[0],distance_pair[1]])
 
     return filtered_pairs
+
+def create_curvature_distance_plot(contour):
+    #import seaborn as sns
+    matplotlib.use('TkAgg')
+    fig = plt.figure(figsize=(20, 20), dpi=300)
+    ax = fig.add_subplot(1,1,1)
+    all_kvalues = contour.curvature_values
+    all_distance = contour.cumulative_distance
+    max_k = contour.max_curvature_values
+    max_distance = contour.max_curvature_distance
+
+    #sns.lineplot(all_distance[1 :], all_kvalues[1 :])
+    #sns.scatterplot(max_distance, max_k)
+    plt.plot(all_distance[1 :], all_kvalues[1 :], c='black', linewidth = 1, zorder=1)
+    plt.scatter(max_distance, max_k, c='red',edgecolors='black', s=50, zorder=2)
+    ax.set_ylim(ymin=-0.2)
+    ax.set_xlim(xmin=0)
+    ax.set_ylabel('Curvature (K)')
+    ax.set_xlabel('Distance (radians)')
+    plt.grid()
+    ax.set_axisbelow(True)
+    plt.show()
+
+
 
 
 
