@@ -33,7 +33,7 @@ class Application:
         self.mainMenu.add_cascade(label="File", menu=self.fileMenu)
 
         self.imagesMenu = Menu(self.mainMenu, tearoff=0)
-        self.imagesMenu.add_command(label="Load Images", command=lambda: self.load_files_for_spot_capture())
+        self.imagesMenu.add_command(label="Load Images", command=lambda: self.create_spot_capture_dialog())
         self.imagesMenu.add_command(label="Capture Analytical Spot [s]", command=self.start_spot_capture)
         self.imagesMenu.add_command(label="Capture Analytical Spot Size [a]", command=self.RectSpotDraw)
         self.imagesMenu.add_command(label="Mark Object for Deletion [d]", command=self.DupDraw)
@@ -47,7 +47,7 @@ class Application:
 
         self.binariseMenu = Menu(self.mainMenu, tearoff=0)
         self.binariseMenu.add_command(label="Load json Files", command=lambda: self.Browse('json'))
-        self.binariseMenu.add_command(label="Image Segmentation Toolbox", command=self.browseImages)
+        self.binariseMenu.add_command(label="Image Segmentation Toolbox", command=self.create_image_segmentation_toolbox_dialog)
         #self.binariseMenu.add_command(label="Grain Boundary Capture [p]", command=self.BoundaryDraw)
         #self.binariseMenu.add_command(label="Polygon Insert Point [i]", command=self.EditPolygon)
         #self.binariseMenu.add_command(label="Polygon Insert Point [m]", command=self.PointMove)
@@ -115,48 +115,10 @@ class Application:
             self.imgCount = self.imgCount + 1
             result = self.DisplayImages()
 
-
-    def SavePolygon(self):
-        x_list = []
-        y_list = []
-        polyCoords = []
-
-        for point in self.allPolys[self.uniqueTag]:
-            x_list.append(point[1])  # get a list of all the x-coords. This makes it easy to  get min and max x
-            y_list.append(point[2])  # get a list of all the y-coords.This makes it easy to get min and max y
-            polyCoords.append({"x": point[1], "y": point[2]})  # get a list of each coord pair. This makes it easy to write the poly to the json file
-        # Get the new bounding box for the polygon
-        top = min(y_list)  # y increases downwards
-        left = min(x_list)  # x increases to the right
-        height = abs(max(y_list) - min(y_list))
-        width = abs(max(x_list) - min(x_list))
-        boundingBox = {"height": height, "width": width, "left": left, "top": top}
-
-        with open(os.path.join(self.folderPath, self.image_iterator_current[0]), errors='ignore') as jsonFile:
-            data = json.load(jsonFile)
-            anyMatch = False
-            for region in data['regions']:
-                if region['id'] == self.uniqueTag:  # If the polygon already exists in the jSON
-                    region["boundingBox"] = boundingBox
-                    region["points"] = polyCoords
-
-                else:  # if it's newly digitised and does not yet exist in the json file, and it's a polygon
-                    newRegion = {"id": self.uniqueTag, "type": self.Type, "tags": ["RL"], "boundingBox": boundingBox,
-                                 "points": polyCoords}
-                    data['regions'].append(newRegion)
-
-        with open(os.path.join(self.folderPath, self.image_iterator_current[0]), 'w', errors='ignore') as updatedFile:
-            json.dump(data, updatedFile, indent=4)
-        self.uniqueTag = None
-        self.groupTag = None
-
     def display_image(self, image):
         self.drawing.display_image(image)
 
-
-
     def Browse(self, case):
-        test = np.zeros((5, 5))
         if case == 'RL': #if browing for an RL image in the binarise menu
             filename = filedialog.askopenfilename(filetypes=[("all files", "*.*")])
             self.RLPath.set(filename)
@@ -198,22 +160,6 @@ class Application:
         else:
             print('Browse error. No case')
 
-    def check_for_images_and_jsons(self):
-        has_images = False
-        missing_json_files = []
-        for path, folders, files in os.walk(self.folderPath):
-            for name in files:
-                if os.path.splitext(name)[1] == '.png': #check for images
-                    has_images = True
-                    json_file = os.path.splitext(name)[0]+'.json'
-                    has_json = self.does_json_exist(os.path.join(self.folderPath,json_file))
-                    if not has_json:
-                        missing_json_files.append(name)
-        return has_images, missing_json_files
-
-    def does_json_exist(self, json_file):
-        return os.path.exists(json_file)
-
     def ok_cancel_create_json_files(self, list_of_json_files_to_create):
         self.ok_cancel_json_window = Toplevel(root)
         self.ok_cancel_json_window.title("Create missing json Files")
@@ -231,34 +177,7 @@ class Application:
     def close_popup_window_and_create_jsons(self,window, json_files_to_create):
         self.close_window(window)
         for file_name in json_files_to_create:
-            self.write_json_file(file_name)
-
-    def write_json_file(self,file):
-        file_extension = os.path.splitext(file)[-1]
-        path  = os.path.join(self.image_folder_path.get(),file)
-        img = cv2.imread(path)[:,:,0]
-        json_name = os.path.splitext(file)[0]+".json"
-        data = {"asset": {
-                    "format": file_extension,
-                    "id": self.create_hash(file),
-                    "name": file,
-                    "path": path,
-                    "size": {
-                            "width":img.shape[1],
-                            "height":img.shape[0]
-                            },
-
-                    },
-                "regions":[]
-               }
-
-        with open(os.path.join(self.image_folder_path.get(),json_name), 'w', errors='ignore') as new_json:
-            json.dump(data, new_json, indent=4)
-
-
-    def create_hash(self,item_to_hash):
-        hash_code = hash(item_to_hash)
-        return hash_code
+            self.model.write_json_file(file_name)
 
     def GetImageInfo(self):
         #Does 3 things:
@@ -267,7 +186,7 @@ class Application:
         #loads the images for spot capture
         self.jsonList = []
 
-        has_images,missing_json_files = self.check_for_images_and_jsons()
+        has_images,missing_json_files = self.model.check_for_images_and_jsons(self.folderPath)
 
         if has_images == False:
             self.error_message_text = "The folder contains no images for data capture."
@@ -277,44 +196,11 @@ class Application:
         if missing_json_files:
             if self.create_json_var.get() == 1:
                 for file in missing_json_files:
-                    self.write_json_file(file)
+                    self.model.write_json_file(file)
             else:
                 self.ok_cancel_create_json_files(missing_json_files)
 
-        # Get a list of unique sample ID's and the spots associated with them.
-        for path, folders, files in os.walk(self.folderPath):
-            for name in files:
-                if os.path.splitext(name)[1] == '.json':
-                    with open(os.path.join(self.folderPath, name), errors='ignore') as jsonFile:
-                        data = json.load(jsonFile)
-                    if not name in self.jsonList:
-                        self.jsonList.append([name, data['asset']['name']]) #add the image name to the list of json files, as jsons and images have same name
-                        sampleID = data['asset']['name'].split("_")[0]
-                        if sampleID not in self.unique_sample_numbers:#create a dictionary with unique sample numbers only
-                            self.unique_sample_numbers[sampleID]=set()
-                            self.sampleList.append(sampleID)
-                            for region in data['regions']: #everytime we find a json with a unique sample number, don't forget to get the spots listed in that json
-                                self.unique_sample_numbers[sampleID].add(region['id'])
-                        else: #you might find jsons with existing sample numbers. They may also contains spots, record those spots.
-                            for region in data['regions']:
-                                self.unique_sample_numbers[sampleID].add(region['id'])
-
-        self.sampleList.sort()
-        #self.uniqueSampleNumbers = {i: set() for i in self.list_of_sample_numbers} #this makes a set of the sample numbers, i.e. keeping unique sample numbers only, no duplicates
-
-        # This is likely inefficient. First I  looped through to get all unique image ID's and create a dictionary. Then I loop through to add all sample ID's to the dictionary
-       # for path, folders, files in os.walk(self.folderPath):
-        #    for name in files:
-         #       if os.path.splitext(name)[1] == '.json':
-          #          with open(os.path.join(self.folderPath, name), errors='ignore') as jsonFile:
-           #             data = json.load(jsonFile)
-            #        pattern = r"_p[0-9]{1,2}.png"
-             #       sample = re.sub(pattern, "", data['asset']['name'])
-              #      for region in data['regions']:
-               #         if region['tags'][0] == 'SPOT':
-                #            self.uniqueSampleNumbers[sample].add(region['id'])
-        #self.sampleList = list(self.list_of_sample_numbers)
-
+        self.model.read_sampleID_and_spots_from_json(self.folderPath)
 
     def open_error_message_popup_window(self):
         self.errorMessageWindow = Toplevel(root)
@@ -323,10 +209,7 @@ class Application:
         self.errorLabel = Label(self.errorMessageWindow, text=self.error_message_text)
         self.errorLabel.grid(column=0, row=0)
 
-
-
-
-    def load_files_for_spot_capture(self):
+    def create_spot_capture_dialog(self):
         self.browse_for_files_window = Toplevel(root)
         self.browse_for_files_window.title("Select Images for Spot Capture")
         self.browse_for_files_window.minsize(400,100)
@@ -370,7 +253,6 @@ class Application:
         self.cancel_load_files_for_capture = Button(self.browse_for_files_window, text="Cancel", width=8,command=lambda: self.close_window(self.browse_for_files_window))
         self.cancel_load_files_for_capture.grid(column=1, row=4, padx=2, pady=5)
 
-
     def close_window(self,window):
             window.destroy()
 
@@ -392,9 +274,9 @@ class Application:
         self.browse_for_json_folder.config(state=state)
         self.model.set_json_folder_path(path)
 
-    def browseImages(self):
+    def create_image_segmentation_toolbox_dialog(self):
         self.browseImagesWindow = Toplevel(root)
-        self.browseImagesWindow.title("Select Images to Binarise")
+        self.browseImagesWindow.title("Image Segmentation Toolbox")
         self.browseImagesWindow.minsize(400, 100)
         self.browseImagesWindow.attributes('-topmost', True)
 
@@ -469,7 +351,7 @@ class Application:
         self.breakLine.grid(column=0, row=7, padx=2, pady=5)
         self.saveChanges = Button(self.browseImagesWindow, text="Save Changes", command=self.model.SaveBreakChanges)
         self.saveChanges.grid(column=0, row=8, padx=2, pady=5)
-        self.measureShapes = Button(self.browseImagesWindow, text="Measure Shapes",command=self.model.MeasureShapes)
+        self.measureShapes = Button(self.browseImagesWindow, text="Measure Shapes",command=self.start_measure_shapes)
         self.measureShapes.grid(column=0, row=9, padx=2, pady=5)
         self.pushDB = Button(self.browseImagesWindow, text="Push to DB",command=self.DBPush)
         self.pushDB.grid(column=0, row=10, padx=2, pady=5)
@@ -484,14 +366,19 @@ class Application:
         self.write_to_csv_button = Button(self.browseImagesWindow, text="Save to CSV", command=self.write_to_csv)
         self.write_to_csv_button.grid(column=0, row=14, padx=2, pady=5)
 
+    def start_measure_shapes(self):
+        mask_path = self.MaskFolderLocation.get()
+        self.model.MeasureShapes(mask_path)
+
+
     def ProcessFolder(self):
         self.ProcessFolderFlag = True
         for path,folder,files in os.walk(self.Folder_Location.get()):
             for name in files:
                 self.currentMask = self.Folder_Location.get()+'/'+name #the file path of the current mask we're processing
                 self.DisplayMask()
-                self.MeasureShapes()
-                self.DBPush()
+                self.model.MeasureShapes(self.currentMask,True)
+                self.model.push_shape_measurements_to_database()
                 self.currentMask = None
             self.ProcessFolderFlag = False
         print('Processing complete')
@@ -527,404 +414,16 @@ class Application:
 
     def write_to_csv(self):
         filepath = filedialog.asksaveasfilename(defaultextension = '.csv', filetypes = [("CSV Files","*.csv")], title="Save As")
-        #filepath ='C:/Users/20023951/Documents/PhD/GSWA/test_masks/shape_measurements.csv'
-        colArray = ['sampleid', 'image_id', 'grain_number','grain_centroid', 'grain_spots', 'area', 'equivalent_diameter', 'perimeter', 'minor_axis_length','major_axis_length',
-                   'solidity', 'convex_area', 'formFactor','roundness', 'compactness', 'aspectRatio', 'minFeret', 'maxFeret', 'contour', 'image_dimensions','mask_image']
-
-        with open(filepath, mode='w',newline='') as csv_file:
-            csv_writer = csv.writer(csv_file, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)
-            csv_writer.writerow(colArray)
-
-            for row in self.dfShapeRounded.itertuples(False):
-                data = []
-                if row[4] != ' ':
-                    spots = row[4].split(',')
-                    for spot in spots:
-                        data = []
-                        for x in range(len(row)):
-                            if x != 4:
-                                data.append(row[x])
-                            else:
-                                data.append(spot)
-                        csv_writer.writerow(data)
-
-                else:
-                    data = []
-                    for i in range(len(row)):
-                        data.append(row[i])
-                    csv_writer.writerow(data)
-
-
-
-    def DBPush(self):
-        # push the shape descriptors to the shape_descriptor table
-        connection = pyodbc.connect(
-        r'DRIVER={Microsoft Access Driver (*.mdb, *.accdb)};DBQ=C:/Users/20023951/Documents/PhD/GSWA/GSWA_2019Geochron/DATABASES/Test.mdb')  # Set up a connection string
-        colArray = 'sampleid, image_id, grain_number,grain_centroid, grain_spots, area, equivalent_diameter, perimeter, minor_axis_length,major_axis_length, solidity, convex_area, formFactor,roundness, compactness, aspectRatio, minFeret, maxFeret, contour, image_dimensions,mask_image'
-        cursor = connection.cursor()
-        if self.jsonName == '':
-            self.error_message_text = 'Shapes have not been measured'
-            self.open_error_message_popup_window()
-            return
-        elif self.File_Location.get() != '':
-            maskName = self.File_Location.get().split('/')[-1]
-            t_regionID = maskName.split('_')
-            regionID = '_'.join(t_regionID[4:]).replace('.png', '')
-        elif self.currentMask is not None:
-            maskName = self.currentMask.split('/')[-1]
-            t_regionID = maskName.split('_')
-            regionID = '_'.join(t_regionID[4:]).replace('.png', '')
-        queryStatement = "Select * from shape_descriptors where image_id = '" + regionID + "'"
-        # print(queryStatement)
-        cursor.execute(queryStatement)
-
-        results = cursor.fetchall()
-
-        if len(results) == 0:
-            for row in self.dfShapeRounded.itertuples(False):
-                valuesString = ''
-                # print(row)
-                for i in range(len(row)):
-                    if i < len(row) - 1:
-                        if i == 18 or i == 4 or i == 19 or i == 3 or i == 1:
-                            valuesString = valuesString + "'" + str(row[i]) + "',"
-                        else:
-                            valuesString = valuesString + str(row[i]) + ','
-
-                    if i == len(row) - 1:
-                        valuesString = valuesString + "'" + str(row[i]) + "'"
-
-                insertStatement = '''INSERT INTO shape_descriptors(''' + colArray + ''') VALUES(''' + valuesString + ''')'''
-                # print(insertStatement)
-                cursor.execute(insertStatement)
-                cursor.commit()
-            cursor.close()
-            connection.close()
-            print('Insert complete: ', regionID)
-        else:
-            cursor.close()
-            connection.close()
-            print('Sample already in DB: ', regionID)
+        self.model.write_to_csv(filepath)
 
     def SaveMask(self):
         fileRL = self.RLPath.get()
         fileTL = self.TLPath.get()
         maskPath = self.MaskFolderLocation.get()
-        self.threshold[self.threshold>0]=255
-        fig = plt.figure(figsize=(15, 15), dpi=100)
-        ax = fig.add_axes([0, 0, 1, 1])
-        jsonName=''
-        sampleid=''
-        regionID=''
 
-        if fileRL != '':
-            fileName = fileRL.split('/')[-1]
-            jsonName = '_'.join(fileName.split('_')[:3])+'.json'
-            sampleid = jsonName.split('_')[0]
-            t_regionID = fileName.split('_')
-            regionID = '_'.join(t_regionID[4:]).replace('.png', '')
-
-        elif self.File_Location.get() != '':
-            fileName = self.File_Location.get().split('/')[-1]
-            jsonName = '_'.join(fileName.split('_')[:2])
+        self.model.write_mask_to_png(fileRL,fileTL,maskPath)
 
 
-        maskPath = os.path.join(maskPath,fileName)
-        if self.json_folder_location is None or self.json_folder_location == '':
-            self.error_message_text = 'JSON file location has not been set'
-            self.open_error_message_popup_window()
-            return
-        else:
-            with open(os.path.join(self.json_folder_location,jsonName), errors='ignore') as jsonFile:
-                data = json.load(jsonFile)
-            for region in data['regions']:
-                if region['id'] == regionID:
-                    region["RL_Path"] = fileRL
-                    region["TL_Path"] = fileTL
-                    region["Mask_Path"] = maskPath
-
-            with open(os.path.join(self.json_folder_location,jsonName), 'w', errors='ignore') as updatedFile:
-                json.dump(data, updatedFile, indent=4)
-
-        cv2.imwrite(maskPath, self.threshold)
-
-
-
-
-
-
-
-    def MeasureShapes(self):
-        self.jsonName=''
-        if self.File_Location.get() != '' and self.threshold is None: #not sure if I can do this
-            self.threshold = cv2.imread(self.File_Location.get())[:,:,0]
-            self.width = self.threshold.shape[1]
-            self.height = self.threshold.shape[0]
-        image_remove = removeSmallObjects(self.threshold,15)  # remove small objects below a threshold size (max object size/15)
-        image_clear = clear_border(labels=image_remove, bgval=0,buffer_size=1)  # remove objects that touch the image boundary
-        image_clear_uint8 = image_clear.astype('uint8')
-        self.threshold = image_clear_uint8
-
-        self.contourList={}
-        fileLocation = self.json_folder_path.get()#'C:/Users/20023951/Documents/PhD/GSWA/Geochem_Interrogate/t2_inv1_files'
-        if self.File_Location.get() != '': #if we're processing a single mask image
-            fPath = self.File_Location.get()
-        elif self.ProcessFolderFlag == True: #if w are processing an entire folder of masks
-            fPath = self.currentMask
-
-        else: # if we are processing an image we have just binarised
-            fPath= self.RLPath.get()
-        self.jsonName = '_'.join(fPath.split('/')[-1].split('_')[:3]) + '.json'
-        sampleid = self.jsonName.split('_')[0]
-        t_regionID = fPath.split('/')[-1].split('_')
-        regionID = '_'.join(t_regionID[4:]).replace('.png', '')
-
-        imageDimensions = ''  # this will record the XY dimensions of the cropped image, so that the contours can be redrawn on a blank image in the event that the cropped image  file is ever lost
-        spot = False
-        spotList = []
-        dupList = []
-        for path, folder, files in os.walk(fileLocation):
-            for name in files:
-                if name == self.jsonName:  # find the json file that relates to the pdf page (image) under consideration
-                    scaleFlag=False
-                    spotList = []
-                    dupList = []
-                    with open(os.path.join(fileLocation, self.jsonName), errors='ignore') as jsonFile:
-                        data = json.load(jsonFile)
-
-                    for region in data['regions']:
-                        if regionID =="": #if the photo  in question does not comprise subregions (i.e. not a photo collage)
-                            imageTop = 0  # find out the starting point (top left) of the photo under consideration
-                            imageLeft = 0
-                            imageWidth = data["asset"]["size"]["width"]
-                            imageHeight = data["asset"]["size"]['height']
-                            imageDimensions = str(imageTop) + ',' + str(imageLeft) + ',' + str(
-                                imageTop + imageWidth) + ',' + str(
-                                imageLeft + imageHeight)  # record those photo dimensions for use later
-                        elif region['id'] == regionID: #if the photo in question is a subregion of the original image
-                            imageTop = region['boundingBox']['top']  # find out the starting point (top left) of the photo under consideration
-                            imageLeft = region['boundingBox']['left']
-                            imageWidth = region['boundingBox']['width']
-                            imageHeight = region['boundingBox']['height']
-                            imageDimensions = str(imageTop) + ',' + str(imageLeft) + ',' + str(
-                                imageTop + region['boundingBox']['width']) + ',' + str(
-                                imageLeft + region['boundingBox']['height'])  # record those photo dimensions for use later
-                        if region['tags'][0] == 'SPOT' and region['type'] == 'POINT':  # this will look for all spots in the pdf page, regardless of whether or not they are actually on the cropped image under consideration
-                            spot = True
-                            x = region['points'][0]['x']
-                            y = region['points'][0]['y']
-                            spotID = region['id']
-                            newX = x - imageLeft
-                            newY = y - imageTop
-                            #print('spotID: ', spotID, ' | x: ', x, ' | y: ', y, ' | newX: ', newX, ' | newY: ', newY)
-                            if x >= imageLeft:
-                                if x <= imageLeft+imageWidth:
-                                    if y >= imageTop:
-                                        if y <= imageTop+imageHeight:
-                                            spotList.append([newX, newY, spotID])
-                        if region['type'] == 'SCALE':  # this will look for all scales (there should only be 1) on the pdf page, regardless of whether or not they are actually on the cropped image under consideration
-                            delta_x = abs(region['points'][0]['x'] - region['points'][1]['x'])  # diff in x between THIS node and other nodes
-                            delta_y = abs(region['points'][0]['y'] - region['points'][1]['y'])  # diff in y between THIS node and other nodes
-                            distance = math.sqrt((delta_x ** 2) + (delta_y ** 2))  # pixel distance, equivalent to 100 microns
-                            scaleFlag = True
-                            micPix = 100 / distance
-                        if region['type'] == 'RECTANGLE' and region['tags'][0] == 'SPOT':  # this will look for all rectanglular scales on the pdf page, regardless of whether or not they are actually on the cropped image under consideration
-                            spot = True
-                            x = region['boundingBox']['left'] + (region['boundingBox']['width'] / 2)
-                            y = region['boundingBox']['top'] + (region['boundingBox']['height'] / 2)
-                            spotID = region['id']
-                            newX = x - imageLeft
-                            newY = y - imageTop
-                            if x >= imageLeft:
-                                if x <= imageLeft + imageWidth:
-                                    if y >= imageTop:
-                                        if y <= imageTop + imageHeight:
-                                            spotList.append([newX, newY, spotID])
-                            #('rectangle scale detected')
-                            scaleFlag = True
-                            micPix = 30 / getScale(name, path, 'SPOT')
-                            #print('micron per pixel: ', micPix)
-                        if region['type'] == 'RECTANGLE' and region['tags'][0] == 'DUPLICATE':
-                            x = region['boundingBox']['left'] + (region['boundingBox']['width'] / 2)
-                            y = region['boundingBox']['top'] + (region['boundingBox']['height'] / 2)
-                            newX = x - imageLeft
-                            newY = y - imageTop
-                            if x >= imageLeft:
-                                if x <= imageLeft + imageWidth:
-                                    if y >= imageTop:
-                                        if y <= imageTop + imageHeight:
-                                            dupList.append([newX, newY])
-                    if spot == False:
-                        print('No spot in image')
-
-                    if scaleFlag == False  or micPix<0:
-                        scale = getScale(name, path, 'SPOT')
-                        if scale == -1:
-                            self.error_message_text = 'No scale available in sample'
-                            self.open_error_message_popup_window()
-                            return
-                        else:
-                            micPix = 30 / scale
-
-                    #here we remove all those grains that were tagged as duplicates in the json file
-            for duplicate in dupList:
-                label = self.threshold[int(duplicate[1]), int(duplicate[0])]
-                if label != 0:
-                    self.threshold[self.threshold == label] = 0
-
-        self.contourList = {}
-        contoursFinal, hierarchyFinal = cv2.findContours(self.threshold, cv2.RETR_TREE,cv2.CHAIN_APPROX_SIMPLE)  # cv2.CHAIN_APPROX_SIMPLE, cv2.RETR_EXTERNAL
-        props = regionprops(self.threshold)
-
-        # These are my lists:
-        sampleid_List = []
-        regionid_List = []  # unique code coming from VOTT, per image
-        centroid_List = []  # centroid of grain
-        label_List = []  # this  records the   number assigned to a region by scimage (i.e. the region label)
-        spots_per_grain_List = []  # this will record the analytical spots per region
-        area_List = [] #areas of grains
-        equivalent_diameter_List = []
-        perimeter_List = []
-        minor_axis_length_List = []
-        major_axis_length_List = []
-        solidity_List = []
-        convex_area_List = []
-        solidityImageJ_List = []
-        formFactor_List = []
-        roundness_List = []
-        compactness_List = []
-        aspectRatio_List = []
-        solidity_List = []
-        effectiveDiameter_List = []
-        maxFeret_List = []
-        minFeret_List = []
-        contour_List = []
-        maskImage_List = []
-        imDimensions_List = []
-
-        # Get the values and write to my lists:
-        for x in range(0, len(props)):
-            centroid = props[x].centroid
-            label = props[x].label
-            area = props[x].area * (micPix ** 2)
-            equivalent_diameter = props[x].equivalent_diameter * micPix
-            perimeter = props[x].perimeter * micPix
-            minor_axis_length = props[x].minor_axis_length * micPix
-            major_axis_length = props[x].major_axis_length * micPix
-            solidity = props[x].solidity
-            convex_area = props[x].convex_area * (micPix ** 2)
-            formFactor = (4 * math.pi * area) / (perimeter ** 2)
-            # solidity = area/convex_area
-            roundness = (4 * area) / (math.pi * (major_axis_length ** 2))
-            compactness = (math.sqrt((4 / math.pi) * area) / major_axis_length)
-            aspectRatio = major_axis_length / minor_axis_length
-            maxFeret, minFeret = feret_diameter(props[x].convex_image)  # Convex image is good enough because it'll give us the max points and min edges for maxFeret and minFeret
-
-            # now find which contour belongs to which region. Also find out which spots lie in the contour:
-            for contour in contoursFinal:
-                polygon = Polygon(np.squeeze(contour))  # create a shapely polygon
-                representative_point = polygon.representative_point()  # using the shapely polygon, get a point inside the polygon
-                region_label = self.threshold[int(representative_point.y), int(representative_point.x)]  # get the region label at the representative point
-                if region_label == label:  # is this boundary around the region in question?
-                    contour_List.append(np.squeeze(contour).tolist())
-                    spots = []
-                    boundary = matplotlib.path.Path(np.squeeze(contour), closed=True)
-                    for spot in spotList:
-                        spotInside = boundary.contains_point([spot[0], spot[1]])
-                        if spotInside == True:
-                            spots.append(spot[2])  # a grain may have more than 1 spot associated with it. Find all spots associated with the grain
-                    if spots != []:
-                        spots_per_grain_List.append(','.join(spots))  # write all associated spots to the list.
-                    else:
-                        spots_per_grain_List.append('')  # if there are not spots in the grain, record empty.
-
-            sampleid_List.append(sampleid)
-            regionid_List.append(regionID)
-            label_List.append(label)
-            area_List.append(area)
-            centroid_List.append(centroid)
-            equivalent_diameter_List.append(equivalent_diameter)
-            perimeter_List.append(perimeter)
-            minor_axis_length_List.append(minor_axis_length)
-            major_axis_length_List.append(major_axis_length)
-            convex_area_List.append(convex_area)
-            formFactor_List.append(formFactor)
-            roundness_List.append(roundness)
-            solidity_List.append(solidity)
-            compactness_List.append(compactness)
-            aspectRatio_List.append(aspectRatio)
-            maxFeret_List.append(maxFeret*micPix)
-            minFeret_List.append(minFeret*micPix)
-            imDimensions_List.append(imageDimensions)
-            if self.maskPath != '':
-                maskImage_List.append(self.maskPath)  # path is defined in the previous code block. This  is where image2 is saved. It's a file path.
-            elif self.File_Location.get() != '':
-                maskImage_List.append(self.File_Location.get())
-            elif self.ProcessFolderFlag == True:
-                maskImage_List.append(self.currentMask)
-
-        if self.Current_Image == 'TL' and self.TLPath.get() !='':
-            img_to_display = cv2.imread(self.TLPath.get())
-        elif self.Current_Image == 'RL' and self.RLPath.get() !='':
-            img_to_display = cv2.imread(self.RLPath.get())
-        else:
-            self.threshold[self.threshold>0]=255
-            img_to_display = np.stack((self.threshold,)*3, axis=-1)
-
-        #cv2.imwrite('C:/Users/20023951/Documents/PhD/Reporting/Paper1_ZirconSeparationUtility/CaseStudy/CaseStudy_MaduraShelf/mask_img.jpg', img_to_display)
-        for i in range(len(label_List)):
-            #img_to_display = cv2.circle(img_to_display, (int(centroid_List[i][1]), int(centroid_List[i][0])), 3, (0, 0, 255), 2)
-            cv2.putText(img_to_display, str(label_List[i]), (int(centroid_List[i][1]-2), int(centroid_List[i][0]-2)), cv2.FONT_HERSHEY_DUPLEX, 0.3, (0, 0, 255))
-
-        #for duplicate in dupList:
-            #img_to_display = cv2.circle(img_to_display, (int(duplicate[0]), int(duplicate[1])), 1, (255, 255, 255), 1)
-            #cv2.putText(img_to_display, 'Duplicate', (int(duplicate[0]) + 5, int(duplicate[1]) + 5), cv2.FONT_HERSHEY_DUPLEX,0.5, (255, 255, 255))
-
-        #cv2.imwrite('C:/Users/20023951/Documents/PhD/Reporting/Paper1_ZirconSeparationUtility/CaseStudy/CaseStudy_MaduraShelf/labeled_mask.jpg',img_to_display)
-
-        image_pill = Image.fromarray(img_to_display)
-        self.drawing.display_image(image_pill)
-        self.model.extract_contours_from_image("extcont")
-
-        for spot in spotList:
-            spotX = spot[0]
-            spotY = spot[1]
-            spotID = spot[2]
-            self.myCanvas.create_oval(spotX-5,spotY-5, spotX+5, spotY+5, fill='lightgreen',outline='green', width=1, activefill='yellow', activeoutline='yellow', tags=('s_'+str(spotID), 'spot_'+str(spotID)))
-            self.myCanvas.create_text(spotX-7,spotY-7,fill='green', text=spotID, tags=('s_'+str(spotID), 'spotno_'+str(spotID)))
-
-        # Create a pandas table for all these elements:
-        data = {'sampleid': sampleid_List,
-                'image_id': regionid_List,
-                'grain_number': label_List,
-                'grain_centroid': centroid_List,
-                'grainspot': spots_per_grain_List,
-                'area': area_List,
-                'equivalent_diameter': equivalent_diameter_List,
-                'perimeter': perimeter_List,
-                'minor_axis_length': minor_axis_length_List,
-                'major_axis_length': major_axis_length_List,
-                'solidity': solidity_List,
-                'convex_area': convex_area_List,
-                'formFactor': formFactor_List,
-                'roundness': roundness_List,
-                'compactness': compactness_List,
-                'aspectRatio': aspectRatio_List,
-                'minFeret': minFeret_List,
-                'maxFeret': maxFeret_List,
-                'contour': contour_List,
-                'image_dimensions': imDimensions_List,
-                'mask_image': maskImage_List
-                }
-        # Show me the table!
-        pd.set_option('display.max_rows', None)
-        pd.set_option('display.max_columns', None)
-        pd.set_option('display.width', None)
-        pd.set_option('display.max_colwidth', None)
-        dfShape = pd.DataFrame(data)
-        self.dfShapeRounded = dfShape.round(decimals=2)  # And I only want to see 2 decimal places
-        print(self.dfShapeRounded)
-        micPix=None
 
     def binariseImages(self):
         self.pairsList == []

@@ -28,6 +28,9 @@ class ContourPolygon:
     def paired_coordinates(self):
         return list(zip(self.x_coords, self.y_coords))
 
+    def inverted_paired_coordinates(self):
+        return list(zip(self.y_coords, self.x_coords))
+
     def size(self):
         #tells us how many vertices are in the polygon
         return len(self.x_coords)

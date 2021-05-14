@@ -124,3 +124,36 @@ def StartInsertPoint(self, addEvent):
     self.myCanvas.create_polygon(coords, fill='', outline='red', width=1, tags=(self.groupTag, self.uniqueTag))
     # self.SavePolygon()
 
+    def SavePolygon(self):
+        x_list = []
+        y_list = []
+        polyCoords = []
+
+        for point in self.allPolys[self.uniqueTag]:
+            x_list.append(point[1])  # get a list of all the x-coords. This makes it easy to  get min and max x
+            y_list.append(point[2])  # get a list of all the y-coords.This makes it easy to get min and max y
+            polyCoords.append({"x": point[1], "y": point[2]})  # get a list of each coord pair. This makes it easy to write the poly to the json file
+        # Get the new bounding box for the polygon
+        top = min(y_list)  # y increases downwards
+        left = min(x_list)  # x increases to the right
+        height = abs(max(y_list) - min(y_list))
+        width = abs(max(x_list) - min(x_list))
+        boundingBox = {"height": height, "width": width, "left": left, "top": top}
+
+        with open(os.path.join(self.folderPath, self.image_iterator_current[0]), errors='ignore') as jsonFile:
+            data = json.load(jsonFile)
+            anyMatch = False
+            for region in data['regions']:
+                if region['id'] == self.uniqueTag:  # If the polygon already exists in the jSON
+                    region["boundingBox"] = boundingBox
+                    region["points"] = polyCoords
+
+                else:  # if it's newly digitised and does not yet exist in the json file, and it's a polygon
+                    newRegion = {"id": self.uniqueTag, "type": self.Type, "tags": ["RL"], "boundingBox": boundingBox,
+                                 "points": polyCoords}
+                    data['regions'].append(newRegion)
+
+        with open(os.path.join(self.folderPath, self.image_iterator_current[0]), 'w', errors='ignore') as updatedFile:
+            json.dump(data, updatedFile, indent=4)
+        self.uniqueTag = None
+        self.groupTag = None
