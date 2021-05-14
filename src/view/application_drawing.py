@@ -346,3 +346,11 @@ class Drawing():
             self.myCanvas.create_polygon(contour_polygon.flattened_coordinates(), fill='', outline='red', activeoutline='yellow', width=1,
                                          tags=(contour_polygon.groupTag, contour_polygon.uniqueTag))
 
+    def display_spots_during_measurement(self,spotList):
+
+        for spot in spotList:
+            spotX = spot[0]
+            spotY = spot[1]
+            spotID = spot[2]
+            self.myCanvas.create_oval(spotX-5,spotY-5, spotX+5, spotY+5, fill='lightgreen',outline='green', width=1, activefill='yellow', activeoutline='yellow', tags=('s_'+str(spotID), 'spot_'+str(spotID)))
+            self.myCanvas.create_text(spotX-7,spotY-7,fill='green', text=spotID, tags=('s_'+str(spotID), 'spotno_'+str(spotID)))
