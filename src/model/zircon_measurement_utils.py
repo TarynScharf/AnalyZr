@@ -1,14 +1,8 @@
 import cv2
-import matplotlib.pyplot  as plt
-from skimage.measure import regionprops
-from skimage.measure import label
-from skimage.color import label2rgb
-import math
-import pandas as pd
-from skimage.measure import find_contours
 import numpy as np
-from skimage.util import pad
 from scipy.spatial.distance import pdist
+from skimage.measure import find_contours
+from skimage.util import pad
 
 
 def calcFormula(pt1, pt2):

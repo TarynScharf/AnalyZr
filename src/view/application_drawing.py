@@ -1,6 +1,18 @@
+import tkinter as tk
+import uuid
+from tkinter import *
+from tkinter.ttk import *
+
+import PIL
+from PIL import ImageTk
+
+from src.model.drawing_objects.spot import Spot
+
+
 class Drawing():
-    def __init__(self,frame,model):
+    def __init__(self,frame,model,view):
         self.model = model
+        self.view = view
         self.myFrame=frame
         self.myCanvas = Canvas(self.myFrame, bg="white")
         self.vScroll = Scrollbar(self.myFrame, orient='vertical', command=self.myCanvas.yview)
@@ -12,6 +24,8 @@ class Drawing():
         self.myCanvas.bind("<Button-3>", self.DeleteObject)
         self.myCanvas.pack(side=LEFT, expand=True, fill=BOTH)
         self.myCanvas.bind_all("<MouseWheel>", self.ScrollWithMouseWheel)
+
+        self.currentImage = None
 
         # variables for drawing
         self.uniqueTag = None
@@ -35,14 +49,8 @@ class Drawing():
     def ScrollWithMouseWheel(self, event):
         self.myCanvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
 
-    def open_save_spot_dialog(self):
-        self.thisSpot = self.myCanvas.find_withtag(self.uniqueTag)[0]
-        all_IDs = self.myCanvas.find_withtag(self.groupTag)
-        for ID in all_IDs:
-            if not ID == self.thisSpot:
-                self.labelID = ID
-
-        self.spotCaptureWindow = Toplevel(root)
+    def open_save_spot_dialog(self, spot, is_new_spot):
+        self.spotCaptureWindow = Toplevel(self.view.master)
         self.spotCaptureWindow.title("Capture Spot Number")
         self.spotCaptureWindow.minsize(300, 100)
         self.spotCaptureLabel = Label(self.spotCaptureWindow, text='Spot ID')
@@ -56,27 +64,24 @@ class Drawing():
         def save_spot():
             spotNo = self.currentSpotNumber.get()
             userText = spotNo.strip()
-            try:
+            '''try:
                 testNum = float(userText)
             except:
                 self.error_message_text = "Non-numeric spot number"
                 self.open_error_message_popup_window()
+                return None'''
+            try:
+                if is_new_spot:
+                    spot.group_tag = userText
+                    self.model.add_new_spot(spot)
+                else:
+                    self.model.update_spot_id(spot, userText)
+            except Exception as e:
+                self.view.open_error_message_popup_window(str(e))
                 return None
-            if userText in self.unique_sample_numbers[self.currentSample]:
-                self.error_message_text = 'Spot number already captured for PDF: ' + str(self.currentSample)
-                self.open_error_message_popup_window()
-                return None
-            if userText.isdecimal():
-                self.error_message_text = 'Integers are not permitted'
-                self.open_error_message_popup_window()
-                return None
-            else:
-                self.unique_sample_numbers[self.currentSample].add(userText)
 
-            self.model.save_spot_to_json(self.thisSpotID, userText, self.x0, self.y0)
-
-            self.myCanvas.itemconfig(self.labelID, text=userText, state=tk.NORMAL, tags=userText)
-            self.myCanvas.itemconfig(self.thisSpotID, tags=(userText, self.uniqueTag))
+            self.myCanvas.itemconfig(spot.unique_text_tag, text=userText, state=tk.NORMAL, tags=spot.get_text_tags())
+            self.myCanvas.itemconfig(spot.unique_tag, tags=spot.get_tags())
             self.currentSpotTextBox.delete(first=0, last=100)
             self.spotCaptureWindow.destroy()
 
@@ -161,6 +166,7 @@ class Drawing():
         tk_img = ImageTk.PhotoImage(image=image)
         self.myCanvas.configure(scrollregion=[0, 0, tk_img.width(), tk_img.height()])
         self.myCanvas.create_image(0, 0, image=tk_img, anchor=NW, tags="Image")
+        self.currentImage = tk_img
 
     def PointMove(self):
         self.myCanvas.bind("<Button-1>", self.StartPointMove)
@@ -280,24 +286,12 @@ class Drawing():
         self.save_rectangle_to_json(self.rectStart_x, self.rectStart_y, self.updatedX, self.updatedY,self.rectangleType,self.uniqueTag)
 
     def capture_spot(self, drawSpotEvent):
-        self.x0 = self.myCanvas.canvasx(drawSpotEvent.x)
-        self.y0 = self.myCanvas.canvasy(drawSpotEvent.y)
-        x1 = self.x0 - 6
-        x2 = self.x0 + 6
-        y1 = self.y0 - 6
-        y2 = self.y0 + 6
-        self.spotPointCount += 1
-        self.groupTag = 'NewSpot' + str(self.spotPointCount)
-        self.uniqueTag = 'SpotOval' + str(self.spotPointCount)
-        self.thisSpotID = self.groupTag
-        self.currentSpotNumber.set(self.groupTag)
-        self.myCanvas.create_oval(x1, y1, x2, y2, outline='blue', fill='blue', activefill='yellow',
-                                  activeoutline='yellow', width=1, tags=(self.groupTag, self.uniqueTag))
-        self.myCanvas.create_text(x1, y1 - 5, text=self.currentSpotNumber.get(), fill='white',
-                                  font=("Helvetica", 7, "bold"), tags=self.groupTag)
-        self.open_save_spot_dialog()
-        self.Type = 'POINT'
-
+        x0 = self.myCanvas.canvasx(drawSpotEvent.x)
+        y0 = self.myCanvas.canvasy(drawSpotEvent.y)
+        groupTag = 'NewSpot_'+str(uuid.uuid4())
+        this_spot = Spot(x0,y0, groupTag)
+        self.draw_interactive_spot(this_spot,'blue')
+        self.open_save_spot_dialog(this_spot, True)
 
     def UnbindMouse(self):
         self.myCanvas.unbind("<ButtonPress-1>")  # unbind rectangle digitisation
@@ -354,3 +348,76 @@ class Drawing():
             spotID = spot[2]
             self.myCanvas.create_oval(spotX-5,spotY-5, spotX+5, spotY+5, fill='lightgreen',outline='green', width=1, activefill='yellow', activeoutline='yellow', tags=('s_'+str(spotID), 'spot_'+str(spotID)))
             self.myCanvas.create_text(spotX-7,spotY-7,fill='green', text=spotID, tags=('s_'+str(spotID), 'spotno_'+str(spotID)))
+
+
+    def plot_kvalues_on_grain_image(self, underlying_image, is_binary_image, composite_contour_list):
+        dpi = 100
+        fig = plt.figure(figsize=(self.width / dpi, self.height / dpi))
+        ax = fig.add_axes([0, 0, 1, 1])
+        matplotlib.use('Agg')
+        canvas = FigureCanvasAgg(fig)
+        plt.margins(0, 0)
+        plt.axis('off')
+
+        if not is_binary_image:
+            plt.imshow(underlying_image, cmap='jet', alpha=0.5)
+        else:
+            plt.imshow(underlying_image, cmap='Greys_r')
+
+        for contour in composite_contour_list:
+            if contour.keep_contour == False:
+                continue
+            x, y = zip(*contour.reconstructed_points)
+            plt.scatter(x, y, c=contour.curvature_values, vmin=-1, vmax=1, s=5)
+            xmax,ymax = zip(*contour.max_curvature_coordinates)
+            #for i in range (len(xmax)):
+            #    text= str(xmax[i])+" | "+str(ymax[i])
+             #   plt.text(xmax[i]+1,ymax[i]+3,c = 'red', s=text, size="medium")
+
+            sc=plt.scatter(xmax,ymax,facecolors='none',edgecolors='red',s=7,linewidth=1)
+            #cbaxis = fig.add_axes([0.9,0.1,0.03,0.8])
+            #cbar = plt.colorbar(sc, cax=cbaxis)
+            #cbar.set_label('Curvature (K)', rotation=270, labelpad=20)
+        plt.subplots_adjust(top=1, bottom=0, right=1, left=0, hspace=0, wspace=0)
+
+        canvas_data, (canvas_width,canvas_height) = canvas.print_to_buffer()  # taken from here: https://matplotlib.org/3.1.1/gallery/user_interfaces/canvasagg.html
+        image_matrix = np.frombuffer(canvas_data, np.uint8).reshape((canvas_height, canvas_width, 4))
+        image_pill = Image.frombytes("RGBA", (canvas_width, canvas_height), image_matrix)
+        self.drawing.display_image(image_pill)
+
+    def draw_image_data(self, image_data):
+        for spot in image_data.spots:
+            self.draw_interactive_spot(spot,'blue')
+
+        for spot_area in image_data.spot_areas:
+            self.draw_interactive_rectange(spot_area)
+
+        for rectangle in image_data.unwanted_objects:
+            self.draw_interactive_rectange(rectangle)
+
+        if image_data.scale is not None:
+            self.draw_interactive_scale(image_data.scale)
+
+    def draw_breaklines(self, breaklines):
+        for line in breaklines:
+            self.myCanvas.create_line(line.x0, line.y0, line.x1, line.y1, width=2, fill='red', activefill='yellow', tags=line.tag)
+
+    def draw_interactive_rectange(self, rectangle):
+        self.myCanvas.create_rectangle(rectangle.x0, rectangle.y0, rectangle.x1, rectangle.y1, width=3, outline=rectangle.get_colour(), activefill='yellow',
+                                       activeoutline='yellow',
+                                       tags=rectangle.get_tags())
+        self.myCanvas.create_text(rectangle.x0, rectangle.y0 - 15, text=rectangle.type(), fill='red', font=("Helvetica", 12, "bold"),
+                                  tags=rectangle.get_text_tags())
+
+    def draw_interactive_spot(self, spot,colour):
+        self.myCanvas.create_oval(spot.x0 - 6, spot.y0 - 6, spot.x0 + 6, spot.y0 + 6, width=2, outline=colour, fill=colour,
+                                  activefill='yellow', activeoutline='yellow',
+                                  tags=spot.get_tags())
+
+        self.myCanvas.create_text(spot.x0, spot.y0 - 5, text=spot.group_tag, fill=colour, font=("Helvetica", 8, "bold"), tags=spot.get_text_tags())
+        self.myCanvas.tag_bind(spot.unique_tag, '<ButtonPress-1>', self.view.create_spot_capture_dialog)
+
+    def draw_interactive_scale(self, scale):
+        self.myCanvas.create_line(scale.x0, scale.y0, scale.x1, scale.y1, width=3, fill='red', activefill='yellow',
+                                  tags=scale.get_tags())
+        # self.myCanvas.tag_bind(ID,'<ButtonPress-1>', self.onClick)

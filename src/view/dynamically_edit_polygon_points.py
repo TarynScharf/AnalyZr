@@ -29,8 +29,8 @@ def SelectPolygon(self, selectEvent):
         self.allPolys[self.groupTag] = coordList
         self.PointMove()
     else:
-        self.error_message_text = 'Select a polygon to edit'
-        self.open_error_message_popup_window()
+        error_message_text = 'Select a polygon to edit'
+        self.view.open_error_message_popup_window(error_message_text)
 
 
 def InsertPoint(self):
@@ -40,8 +40,8 @@ def InsertPoint(self):
 
 def StartInsertPoint(self, addEvent):
     if self.uniqueTag == None:
-        self.error_message_text = 'Select a polygon to edit'
-        self.open_error_message_popup_window()
+        error_message_text = 'Select a polygon to edit'
+        self.view.open_error_message_popup_window(error_message_text)
         return
     delta_x = None  # used to calculate displacement
     delta_y = None  # used to calculate displacement
@@ -140,7 +140,7 @@ def StartInsertPoint(self, addEvent):
         width = abs(max(x_list) - min(x_list))
         boundingBox = {"height": height, "width": width, "left": left, "top": top}
 
-        with open(os.path.join(self.folderPath, self.image_iterator_current[0]), errors='ignore') as jsonFile:
+        with open(os.path.join(self.json_folder_path, self.image_iterator_current[0]), errors='ignore') as jsonFile:
             data = json.load(jsonFile)
             anyMatch = False
             for region in data['regions']:
@@ -153,7 +153,26 @@ def StartInsertPoint(self, addEvent):
                                  "points": polyCoords}
                     data['regions'].append(newRegion)
 
-        with open(os.path.join(self.folderPath, self.image_iterator_current[0]), 'w', errors='ignore') as updatedFile:
+        with open(os.path.join(self.json_folder_path, self.image_iterator_current[0]), 'w', errors='ignore') as updatedFile:
             json.dump(data, updatedFile, indent=4)
         self.uniqueTag = None
         self.groupTag = None
+
+
+"""
+if region['tags'][0] == 'RL' and region['type'] == 'POLYGON':
+    polyCoords = []  # used locally to draw the polygon
+    self.spotCount += 1
+    self.allPolys = {}  # used globally to track all polygons and associated points on the page. Set to empty each time a new page is loaded.
+    groupID = 'boundary' + str(datetime.datetime.now())  # group polygon and points
+    uniqueID = region['id']  # unique identifies polygon
+    idCoordList = []  # gathers point ID, x and y for each point, to be saved to global dictionary
+    for point in region['points']:
+        x0 = point['x']
+        y0 = point['y']
+        xy = [x0, y0]
+        coordID = 'p' + str(datetime.datetime.now())  # uniquely identifies point
+        polyCoords.append(xy)
+        idCoordList.append([coordID, x0, y0])
+        # self.myCanvas.create_oval(x0-4, y0-4, x0+4, y0+4, fill='white',activefill = 'yellow', activeoutline='yellow', outline='grey', width=2,tags = (groupID, coordID))
+"""

@@ -1,7 +1,9 @@
-class ContourPolygon:
-    def __init__(self,groupTag, uniqueTag,coord_pairs = None):
-        self.uniqueTag = uniqueTag
-        self.groupTag = groupTag
+from src.model.drawing_objects.drawing_object import DrawingObject
+
+
+class ContourPolygon(DrawingObject):
+    def __init__(self,groupTag, coord_pairs = None):
+        super().__init__(groupTag)
         self.coord_ids = []
         self.type = "POLYGON"
 

@@ -1,6 +1,3 @@
-from src.application_model.images import *
-
-
 def smooth(img):
     bilateralFilter = cv2.bilateralFilter(img, 75, 15, 75)
     return bilateralFilter
