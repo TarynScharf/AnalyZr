@@ -1,29 +1,15 @@
-import copy
 import cv2
-import imageio
 import json
 import math
 import matplotlib
 import numpy as np
 import os
 import pyefd
-import pyodbc
-import scipy
-from matplotlib.backends.backend_agg import FigureCanvasAgg
-from shapely.geometry import polygon
 from shapely.geometry import LineString
-
-
 
 from matplotlib import pyplot as plt
 
-from scipy import ndimage
-from skimage.segmentation import clear_border
-from scipy.stats import skew, kurtosis 
-
 from shapely.geometry  import Polygon
-from pyefd import elliptic_fourier_descriptors
-from pyefd import reconstruct_contour as rc
 
 from skimage.morphology import remove_small_objects, binary_erosion, binary_dilation,binary_opening
 from skimage.measure import regionprops

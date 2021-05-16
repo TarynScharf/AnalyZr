@@ -1,8 +1,32 @@
+import csv
+import datetime
+import json
+import math
+import os
 import tkinter as tk
+
+import cv2
+import matplotlib
+import numpy as np
+import shapely
+import skimage
+from PIL import ImageTk
+from PIL import Image
+from scipy import ndimage
+
+from src.model import ZirconSeparationUtils, zircon_measurement_utils
+from src.model.drawing_objects.contour_polygon import ContourPolygon
+from src.model.image_data import ImageData
+from src.model.region_measurements import RegionMeasurement
+
+
 class Model():
     def __init__(self):
-        self.json_folder_path = tk.StringVar()
-        self.json_folder_location = None  # where json files are stored.
+
+        self.image_folder_path = None
+        self.json_folder_path = None  # where json files are stored.
+
+
         self.maskPath = ''
         self.contourList = {}  # a list of all the polygon objects to turn into  binary masks
         self.last_contour_deleted = {}  # this dictionary will hold the last contour deleted, incase of an undo
@@ -12,7 +36,6 @@ class Model():
         self.pairsList = []
         self.saveLocation = 'C:/Users/20023951/Documents/PhD/GSWA/Geochem_Interrogate/Binarisation/_o.png'  # where the 1st binarised image will output to
         self.case = ''  # the function of the browse button. I.e. browse for capture, RL or TL
-        self.folderPath = ''
         self.img = None
         self.currentSpotNumber = tk.StringVar()
         self.image_iterator_current = None
@@ -48,6 +71,8 @@ class Model():
         self.ProcessFolderFlag = False  # flag that tracks whether an entire folder of masks is to be processed
         self.currentMask = None  # if processing an entire mask folder, keep track of the current mask's file path
 
+        self.current_image_index = 0 #incrementor that keeps track of where we are in the list of images when displaying them for data capture
+
     def DeleteObject(self, thisObjID,coords):
         if thisObjID == "Image":  # make sure you haven't selected the image
             return
@@ -66,9 +91,9 @@ class Model():
 
         elif 'extcont_' in thisObjID:
             contour_coords = self.contourList[thisObjID].paired_coordinates()
-            polygon = Polygon(contour_coords)  # create a shapely polygon
+            polygon = shapely.Polygon(contour_coords)  # create a shapely polygon
             representative_point = polygon.representative_point()  # using the shapely polygon, get a point inside the polygon
-            self.threshold = label(self.threshold, background=0, connectivity=None).astype('uint8')
+            self.threshold = skimage.label(self.threshold, background=0, connectivity=None).astype('uint8')
             blob_label = self.threshold[int(representative_point.y),int(representative_point.x)]
             if int(blob_label)!=0:
                 self.threshold[self.threshold==blob_label]=0
@@ -77,13 +102,13 @@ class Model():
             del self.contourList[thisObjID]
 
         else:
-            with open(os.path.join(self.folderPath, self.image_iterator_current[0]),errors='ignore') as jsonFile:  # open the json file for the image
+            with open(os.path.join(self.json_folder_path, self.image_iterator_current[0]), errors='ignore') as jsonFile:  # open the json file for the image
                 data = json.load(jsonFile)
             for i in range(0, len(data['regions'])):  # If the object already exists in the json
                 if data['regions'][i]['id'] == thisObjID:
                     data['regions'].pop(i)  # get rid of it. Don't read further (affects incrementor?)
                     break
-            with open(os.path.join(self.folderPath, self.image_iterator_current[0]), 'w', errors='ignore') as updatedFile:
+            with open(os.path.join(self.json_folder_path, self.image_iterator_current[0]), 'w', errors='ignore') as updatedFile:
                 json.dump(data, updatedFile, indent=4)  # rewrite the json without the object
             try:
                 self.unique_sample_numbers[self.currentSample].discard(thisObjID)
@@ -106,7 +131,7 @@ class Model():
         width = abs(max(x_list) - min(x_list))
         boundingBox = {"height": height, "width": width, "left": left, "top": top}
 
-        with open(os.path.join(self.folderPath, self.image_iterator_current[0]), errors='ignore') as jsonFile:
+        with open(os.path.join(self.json_folder_path, self.image_iterator_current[0]), errors='ignore') as jsonFile:
             data = json.load(jsonFile)
             anyMatch = False
             for region in data['regions']:
@@ -119,7 +144,7 @@ class Model():
                                  "points": polyCoords}
                     data['regions'].append(newRegion)
 
-        with open(os.path.join(self.folderPath, self.image_iterator_current[0]), 'w', errors='ignore') as updatedFile:
+        with open(os.path.join(self.json_folder_path, self.image_iterator_current[0]), 'w', errors='ignore') as updatedFile:
             json.dump(data, updatedFile, indent=4)
         self.uniqueTag = None
         self.groupTag = None
@@ -128,7 +153,7 @@ class Model():
         xy = [x0, y0]
         coordID = 'p' + str(datetime.datetime.now())  # each point gets its own unique id
         if uniqueTag not in self.allPolys:
-            polygon = ContourPolygon(groupTag,uniqueTag)
+            polygon = ContourPolygon(groupTag)
             self.allPolys[uniqueTag] = polygon
         else:
             polygon = self.allPolys[uniqueTag]
@@ -165,7 +190,7 @@ class Model():
         self.threshold = updatedMask
 
         updatedMask[updatedMask > 0] = 255
-        labelim = label(updatedMask, background=0, connectivity=None)
+        labelim = skimage.label(updatedMask, background=0, connectivity=None)
         self.threshold = labelim.astype('uint8')
 
         if self.TLPath.get() != '' and self.Current_Image=='TL':
@@ -241,7 +266,7 @@ class Model():
 
     def save_rectangle_to_json(self,rectStart_x, rectStart_y, updatedX, updatedY, rectangleType, uniqueTag):
 
-        with open(os.path.join(self.folderPath, self.image_iterator_current[0]), errors='ignore') as jsonFile:
+        with open(os.path.join(self.json_folder_path, self.image_iterator_current[0]), errors='ignore') as jsonFile:
             data = json.load(jsonFile)
 
         height = abs(rectStart_y - updatedY)
@@ -268,7 +293,7 @@ class Model():
                                 {"x": left, "y": bottom}]}
         data['regions'].append(newRegion)
 
-        with open(os.path.join(self.folderPath, self.image_iterator_current[0]), 'w', errors='ignore') as updatedFile:
+        with open(os.path.join(self.json_folder_path, self.image_iterator_current[0]), 'w', errors='ignore') as updatedFile:
             json.dump(data, updatedFile, indent=4)
 
 
@@ -286,7 +311,7 @@ class Model():
         else:
             top = updatedY
 
-        with open(os.path.join(self.folderPath, self.image_iterator_current[0]), errors='ignore') as jsonFile:
+        with open(os.path.join(self.json_folder_path, self.image_iterator_current[0]), errors='ignore') as jsonFile:
             data = json.load(jsonFile)
             newRegion = {"id": self.uniqueTag, "type": "SCALE", "tags": ["SCALE"],
                          "boundingBox": {"height": height, "width": width, "left": left, "top": top},
@@ -294,25 +319,22 @@ class Model():
                                     {"x":updatedX, "y":updatedY}]}
             data['regions'].append(newRegion)
 
-        with open(os.path.join(self.folderPath, self.image_iterator_current[0]), 'w', errors='ignore') as updatedFile:
+        with open(os.path.join(self.json_folder_path, self.image_iterator_current[0]), 'w', errors='ignore') as updatedFile:
             json.dump(data, updatedFile, indent=4)
 
 
-    def save_spot_to_json(self,thisSpotID,userText,x0,y0):
-        with open(os.path.join(self.folderPath, self.image_iterator_current[0]), errors='ignore') as jsonFile:
+    def save_spot_to_json(self,spot,previous_group_tag):
+        with open(os.path.join(self.json_folder_path, self.image_iterator_current[0]), errors='ignore') as jsonFile:
             data = json.load(jsonFile)
             anyMatch = False
             for region in data['regions']:  # If the spot already exists in the jSON
-                if region['id'] == thisSpotID:
-                    region['id'] = userText
+                if region['id'] == previous_group_tag:
+                    region['id'] = spot.group_tag
                     anyMatch = True
 
             #if anyMatch == False and Type == "POINT":  # if it's newly digitised and does not yet exist in the json file, and it's a point
             if anyMatch == False:
-                newRegion = {"id": userText, "type": "POINT", "tags": ["SPOT"],
-                             "boundingBox": {"height": 5, "width": 5, "left": x0, "top": y0},
-                             "points": [{"x": x0, "y": y0}]}
-                data['regions'].append(newRegion)
+                data['regions'].append(spot.to_json_data())
 
             '''if anyMatch == False and Type == "RECTANGLE":  # if it's newly digitised and does not yet exist in the json file, and it's a rectangle
                 height = abs(self.rectStart_y - self.updatedY)
@@ -338,7 +360,7 @@ class Model():
                                         {"x": left, "y": bottom}]}
                 data['regions'].append(newRegion)'''
 
-        with open(os.path.join(self.folderPath, self.image_iterator_current[0]), 'w', errors='ignore') as updatedFile:
+        with open(os.path.join(self.json_folder_path, self.image_iterator_current[0]), 'w', errors='ignore') as updatedFile:
             json.dump(data, updatedFile, indent=4)
 
     def insert_new_breakline_to_pairslist(self, lineStart_x, lineStart_y, updatedX, updatedY):
@@ -357,10 +379,10 @@ class Model():
         else:
             regionID = ""
 
-        if self.json_folder_location is None:
+        if self.json_folder_path is None:
             return None
 
-        with open(os.path.join(self.json_folder_location, jsonName), errors='ignore') as jsonFile:
+        with open(os.path.join(self.json_folder_path, jsonName), errors='ignore') as jsonFile:
             data = json.load(jsonFile)
 
         # if regionID in data["regions"]:
@@ -380,15 +402,15 @@ class Model():
         elif self.Current_Image == 'RL':
             self.Load_Image(0)
 
-    def check_for_images_and_jsons(self,folderPath):
+    def check_for_images_and_jsons(self, image_folder_path, json_folder_path):
         has_images = False
         missing_json_files = []
-        for path, folders, files in os.walk(folderPath):
+        for path, folders, files in os.walk(image_folder_path):
             for name in files:
                 if os.path.splitext(name)[1] == '.png':  # check for images
                     has_images = True
                     json_file = os.path.splitext(name)[0] + '.json'
-                    has_json = self.does_json_exist(os.path.join(folderPath, json_file))
+                    has_json = self.does_json_exist(os.path.join(json_folder_path, json_file))
                     if not has_json:
                         missing_json_files.append(name)
         return has_images, missing_json_files
@@ -399,7 +421,7 @@ class Model():
 
     def write_json_file(self,file):
         file_extension = os.path.splitext(file)[-1]
-        path  = os.path.join(self.image_folder_path.get(),file)
+        path  = os.path.join(self.json_folder_path.get(), file)
         img = cv2.imread(path)[:,:,0]
         json_name = os.path.splitext(file)[0]+".json"
         data = {"asset": {
@@ -416,15 +438,15 @@ class Model():
                 "regions":[]
                }
 
-        with open(os.path.join(self.image_folder_path.get(),json_name), 'w', errors='ignore') as new_json:
+        with open(os.path.join(self.json_folder_path.get(), json_name), 'w', errors='ignore') as new_json:
             json.dump(data, new_json, indent=4)
 
-    def read_sampleID_and_spots_from_json(self,folderPath):
+    def read_sampleID_and_spots_from_json(self):
         # Get a list of unique sample ID's and the spots associated with them.
-        for path, folders, files in os.walk(folderPath):
+        for path, folders, files in os.walk(self.json_folder_path):
             for name in files:
                 if os.path.splitext(name)[1] == '.json':
-                    with open(os.path.join(folderPath, name), errors='ignore') as jsonFile:
+                    with open(os.path.join(self.json_folder_path, name), errors='ignore') as jsonFile:
                         data = json.load(jsonFile)
                     if not name in self.jsonList:
                         self.jsonList.append([name, data['asset'][
@@ -538,12 +560,12 @@ class Model():
             jsonName = '_'.join(fileName.split('_')[:2])
 
         maskPath = os.path.join(maskPath, fileName)
-        if self.json_folder_location is None or self.json_folder_location == '':
+        if self.json_folder_path is None or self.json_folder_path == '':
             self.error_message_text = 'JSON file location has not been set'
             self.open_error_message_popup_window()
             return
         else:
-            with open(os.path.join(self.json_folder_location, jsonName), errors='ignore') as jsonFile:
+            with open(os.path.join(self.json_folder_path, jsonName), errors='ignore') as jsonFile:
                 data = json.load(jsonFile)
             for region in data['regions']:
                 if region['id'] == regionID:
@@ -551,12 +573,37 @@ class Model():
                     region["TL_Path"] = fileTL
                     region["Mask_Path"] = maskPath
 
-            with open(os.path.join(self.json_folder_location, jsonName), 'w', errors='ignore') as updatedFile:
+            with open(os.path.join(self.json_folder_path, jsonName), 'w', errors='ignore') as updatedFile:
                 json.dump(data, updatedFile, indent=4)
 
         cv2.imwrite(maskPath, self.threshold)
 
-    def get_region_and_sample_id(self, mask_file_path):
+    def next_image(self):
+        if self.current_image_index < len(self.jsonList)-1:
+            self.current_image_index += 1
+
+    def previous_image(self):
+        if self.current_image_index > 0:
+            self.current_image_index -= 1
+
+    def get_current_image_for_data_capture (self):
+        #This is for cycling through images associated with json files when capturing spots
+        self.image_iterator_current = self.jsonList[self.current_image_index]
+        im = self.image_iterator_current[1]
+        jf = self.image_iterator_current[0]
+
+        self.currentSample = im.split("_")[0]
+        fileName = os.path.join(self.image_folder_path, im)
+        image = Image.open(fileName)
+        json_file_path = os.path.join(self.json_folder_path, jf)
+
+        with open(json_file_path, errors='ignore') as jsonFile:
+            data = json.load(jsonFile)
+
+        image_data = ImageData.fromJSONData(data,json_file_path)
+        return image, image_data
+
+    def get_region_and_sample_id(self, mask_file_path,ProcessFolderFlag,RLPath):
         if mask_file_path != '':  # if we're processing a single mask image
             fPath = mask_file_path
         elif ProcessFolderFlag == True:  # if we are processing an entire folder of masks
@@ -576,8 +623,8 @@ class Model():
             self.threshold = cv2.imread(mask_file_path)[:, :, 0]
             self.width = self.threshold.shape[1]
             self.height = self.threshold.shape[0]
-        image_remove = removeSmallObjects(self.threshold,15)  # remove small objects below a threshold size (max object size/15)
-        image_clear = clear_border(labels=image_remove, bgval=0,buffer_size=1)  # remove objects that touch the image boundary
+        image_remove = ZirconSeparationUtils.removeSmallObjects(self.threshold,15)  # remove small objects below a threshold size (max object size/15)
+        image_clear = ZirconSeparationUtils.clear_border(labels=image_remove, bgval=0,buffer_size=1)  # remove objects that touch the image boundary
         image_clear_uint8 = image_clear.astype('uint8')
 
         return image_clear_uint8
@@ -654,7 +701,7 @@ class Model():
                                             spotList.append([newX, newY, spotID])
                             # ('rectangle scale detected')
                             scaleFlag = True
-                            micPix = 30 / getScale(name, path, 'SPOT')
+                            micPix = 30 / ZirconSeparationUtils.getScale(name, path, 'SPOT')
                             # print('micron per pixel: ', micPix)
                         if region['type'] == 'RECTANGLE' and region['tags'][0] == 'DUPLICATE':
                             x = region['boundingBox']['left'] + (region['boundingBox']['width'] / 2)
@@ -670,7 +717,7 @@ class Model():
                         print('No spot in image')
 
                     if scaleFlag == False or micPix < 0:
-                        scale = getScale(name, path, 'SPOT')
+                        scale = ZirconSeparationUtils.getScale(name, path, 'SPOT')
                         if scale == -1:
                             self.error_message_text = 'No scale available in sample'
                             self.open_error_message_popup_window()
@@ -689,7 +736,7 @@ class Model():
     def find_spots_in_region(self,label,contoursFinal,spotList):
         spots = []
         for contour in contoursFinal:
-            polygon = Polygon(np.squeeze(contour))  # create a shapely polygon
+            polygon = shapely.Polygon(np.squeeze(contour))  # create a shapely polygon
             representative_point = polygon.representative_point()  # using the shapely polygon, get a point inside the polygon
             # get the region label at the representative point
             region_label = self.threshold[int(representative_point.y), int(representative_point.x)]
@@ -708,14 +755,14 @@ class Model():
         self.contourList = {}
         contoursFinal, hierarchyFinal = cv2.findContours(self.threshold, cv2.RETR_TREE,
                                                          cv2.CHAIN_APPROX_SIMPLE)  # cv2.CHAIN_APPROX_SIMPLE, cv2.RETR_EXTERNAL
-        props = regionprops(self.threshold)
+        props = skimage.regionprops(self.threshold)
 
         measurements = []
 
         for x in range(0, len(props)):
             # Convex image is good enough because it'll give us the max points and min edges for maxFeret and minFeret
-            maxFeret, minFeret = feret_diameter(props[x].convex_image)
-            spot_list,contour = find_spots_in_region(props[x].label)
+            maxFeret, minFeret = zircon_measurement_utils.feret_diameter(props[x].convex_image)
+            spot_list,contour = self.find_spots_in_region(props[x].label)
             measurement = RegionMeasurement(
                     sampleid = sampleid,
                     image_id = regionID,
@@ -729,10 +776,6 @@ class Model():
                     major_axis_length = props[x].major_axis_length * micPix,
                     solidity = props[x].solidity,
                     convex_area = props[x].convex_area * (micPix ** 2),
-                    formFactor = (4 * math.pi * area) / (perimeter ** 2),
-                    roundness = (4 * area) / (math.pi * (major_axis_length ** 2)),
-                    compactness = (math.sqrt((4 / math.pi) * area) / major_axis_length),
-                    aspectRatio = major_axis_length / minor_axis_length,
                     maxFeret = maxFeret * micPix,
                     minFeret = minFeret * micPix,
                     contour = contour,
@@ -761,9 +804,9 @@ class Model():
 
         return img_to_display
 
-    def MeasureShapes(self, mask_file_path,TLPath, RLPath):
+    def MeasureShapes(self, mask_file_path,TLPath, RLPath,processFolderFlag):
         self.jsonName = ''
-        sampleid,regionID,self.jsonName = self.get_region_and_sample_id(mask_file_path)
+        sampleid,regionID,self.jsonName = self.get_region_and_sample_id(mask_file_path,processFolderFlag,RLPath)
         self.preprocess_image_for_measurement(mask_file_path)
 
         json_file_path = self.json_folder_path.get()  # 'C:/Users/20023951/Documents/PhD/GSWA/Geochem_Interrogate/t2_inv1_files'
@@ -788,10 +831,10 @@ class Model():
         self.extract_contours_from_image("extcont")
         self.view.display_spots_during_measurement(spotList)
 
-        #self.display_measurement_table(region_measurements)
+        self.display_measurement_table(region_measurements)
 
     def display_measurement_table(self,region_measurements):
-
+        '''
         data = {'sampleid': sampleid_List,
                 'image_id': regionid_List,
                 'grain_number': label_List,
@@ -821,7 +864,7 @@ class Model():
         pd.set_option('display.max_colwidth', None)
         dfShape = pd.DataFrame(data)
         self.dfShapeRounded = dfShape.round(decimals=2)  # And I only want to see 2 decimal places
-        print(self.dfShapeRounded)
+        print(self.dfShapeRounded) '''
 
     def binariseImages(self,RLPath, TLPath,rlVar,tlVar):
         self.pairsList == []
@@ -906,5 +949,27 @@ class Model():
         opening_uint8 = opening.astype('uint8')
         self.threshold = opening_uint8
 
+    def set_source_folder_paths(self, image_folder_path, json_folder_path):
+        self.image_folder_path = image_folder_path
+        self.json_folder_path = json_folder_path
 
+    def get_current_sample_index(self):
+        return self.sampleList.index(self.currentSample)
 
+    def get_sample_count(self):
+        return len(self.sampleList)
+
+    def add_new_spot(self, spot):
+        self.check_spot_id_is_unique(spot.group_tag)
+        self.unique_sample_numbers[self.currentSample].add(spot.group_tag)
+        self.save_spot_to_json(spot, None)
+
+    def update_spot_id(self, spot, new_ID):
+        self.check_spot_id_is_unique(new_ID)
+        previous_group_tag = spot.group_tag
+        spot.group_tag = new_ID
+        self.save_spot_to_json(spot, previous_group_tag)
+
+    def check_spot_id_is_unique(self,ID):
+        if ID in self.unique_sample_numbers[self.currentSample]:
+            raise Exception('Spot number already captured for PDF: ' + str(self.currentSample))
