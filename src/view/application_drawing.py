@@ -6,8 +6,9 @@ from tkinter.ttk import *
 import PIL
 from PIL import ImageTk
 
+from src.model.drawing_objects.rectangle import Rectangle, RectangleType
 from src.model.drawing_objects.spot import Spot
-
+import src.model.drawing_objects.scale as scale
 
 class Drawing():
     def __init__(self,frame,model,view):
@@ -41,10 +42,14 @@ class Drawing():
 
     def DeleteObject(self, event):
         thisObj = event.widget.find_withtag('current')[0]  # get the object clicked on
-        thisObjID = self.myCanvas.gettags(thisObj)[0]  # find the groupID for the object clicked on
-        coords = self.myCanvas.coords(thisObjID)
-        self.myCanvas.delete(thisObjID)  # delete everything with the same groupID
-        self.model.DeleteObject(thisObjID,coords) #pass the groupID and coordinates to the model, where everything else is handled
+        tags = self.myCanvas.gettags(thisObj)  # find the groupID for the object clicked on
+        group_tag = tags[0]
+        if group_tag == 'Image':
+            return
+        unique_tag = tags[1] #images only have a group tag, no unique tag
+        coords = self.myCanvas.coords(unique_tag)
+        self.myCanvas.delete(unique_tag)  # delete everything with the same groupID
+        self.model.DeleteObject(group_tag,coords) #pass the groupID and coordinates to the model, where everything else is handled
 
     def ScrollWithMouseWheel(self, event):
         self.myCanvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
@@ -100,29 +105,23 @@ class Drawing():
         self.myCanvas.bind("<ButtonRelease-1>", self.finish_scale)
 
     def LineStart(self, event):
-        uniqueSuffix = 'scale'
-        colour = 'red'
-        uniqueCode = str(datetime.datetime.now())
-        self.uniqueTag = uniqueSuffix + '_' + str(uniqueCode)
-        self.lineStart_x = self.myCanvas.canvasx(event.x)
-        self.lineStart_y = self.myCanvas.canvasy(event.y)
-        self.scaleLine = self.myCanvas.create_line(self.lineStart_x, self.lineStart_y, self.lineStart_x + 1,
-                                                   self.lineStart_y + 1, width=3, fill=colour, activefill='yellow',
-                                                   tags=(self.uniqueTag))
-        self.Type = 'SCALE'
+        groupTag = 'scale' +str(uuid.uuid4())
+        lineStart_x = self.myCanvas.canvasx(event.x)
+        lineStart_y = self.myCanvas.canvasy(event.y)
+        self.scaleLine= scale.Scale(lineStart_x,lineStart_y,lineStart_x+1,lineStart_y+1,groupTag)
+        self.draw_interactive_scale(self.scaleLine)
 
     def LineDraw(self, moveEvent):
-        #self.myCanvas.unbind("<ButtonPress-1>")
-        self.updatedX = self.myCanvas.canvasx(moveEvent.x)
-        self.updatedY = self.myCanvas.canvasy(moveEvent.y)
-        self.myCanvas.coords(self.scaleLine, self.lineStart_x, self.lineStart_y, self.updatedX, self.updatedY)
+        self.scaleLine.x1 = self.myCanvas.canvasx(moveEvent.x)
+        self.scaleLine.y1 =  self.myCanvas.canvasy(moveEvent.y)
+        self.myCanvas.coords(self.scaleLine.unique_tag, self.scaleLine.x0, self.scaleLine.y0, self.scaleLine.x1, self.scaleLine.y1)
 
     def finish_scale(self,mouse_event):
-        self.model.save_scale_to_json(self.uniqueTag,self.lineStart_x,self.lineStart_y,self.updatedX, self.updatedY)
+        self.model.save_drawing_object_to_json(self.scaleLine)
         self.scaleLine = None
 
     def DupDraw(self):
-        self.rectangleType = 'DUPLICATE'
+        self.rectangleType = RectangleType.DUPLICATE
         self.RectDraw()
 
     def BoundaryDraw(self):
@@ -133,33 +132,20 @@ class Drawing():
         self.myCanvas.bind("<ButtonPress-1>", self.add_polygon_vertex)
         self.myCanvas.bind("<ButtonPress-2>", self.PolyComplete)
 
-        uniqueCode = str(datetime.datetime.now())
-        self.groupTag = 'boundary' + uniqueCode  # polygon and points(ovals)will have the same group tag
-        self.uniqueTag = 'poly' + uniqueCode  # only the polygon gets the unique id
-        self.Type = "POLYGON"
+
+        groupTag = 'boundary' + str(uuid.uuid4())  # polygon and points(ovals)will have the same group tag
+        self.contour = Contour(groupTag)
 
     def add_polygon_vertex(self, polyDrawEvent):
-        self.x0 = self.myCanvas.canvasx(polyDrawEvent.x)
-        self.y0 = self.myCanvas.canvasy(polyDrawEvent.y)
-        self.model.add_polygon_vertex(self.x0,self.y0,self.uniqueTag, self.groupTag)
+        x0 = self.myCanvas.canvasx(polyDrawEvent.x)
+        y0 = self.myCanvas.canvasy(polyDrawEvent.y)
+        self.contour.add_vertex(x0,y0)
+        self.view.update_polygon(polygon)
 
-    def draw_polygon(self,polygon):
-        coords = []  # used locally to collate all xy's
-        coords=polygon.flatten_coordinates()
-        size = polygon.size()
-        tags = polygon.groupTag, polygon.uniqueTag
-        if size<2:
-            return # if there is only one point, don't draw any lines.
-
-        self.myCanvas.delete(self.uniqueTag)  # delete all pre-existing lines and redraw
-        if size > 2:
-            self.myCanvas.create_polygon(coords, fill='', outline='red', activeoutline='yellow', width=1,tags=tags)  # redraw,now includes the added point
-        else:
-            self.myCanvas.create_line(coords, fill='red', activefill='yellow', width=1, tags=tags)  # if there are only two points, its a line not a polygon
 
     def PolyComplete(self, event):
         self.myCanvas.unbind("<ButtonPress-2>")  # unbind from polygon digitisation
-        self.model.complete_polygon(self.uniqueTag)
+        self.model.complete_polygon(self.contour)
 
     def display_image(self, image):
         self.myCanvas.delete('all')
@@ -232,7 +218,7 @@ class Drawing():
         self.spotID = ''
 
     def RectSpotDraw(self):
-        self.rectangleType = 'SPOT AREA'
+        self.rectangleType = RectangleType.SPOT_AREA
         self.RectDraw()
 
     def RectDraw(self):
@@ -242,48 +228,28 @@ class Drawing():
         self.myCanvas.bind("<ButtonRelease-1>", self.RectFinalCoords)
 
     def RectStartCoords(self, event):
-        groupSuffix = ''
-        uniqueSuffix = ''
-        colour = ''
-        if self.rectangleType == 'DUPLICATE':
+        if self.rectangleType == RectangleType.DUPLICATE:
             groupSuffix = 'NewDup'
-            uniqueSuffix = 'dupRect'
-            colour = 'red'
             self.text_label = "Duplicate"
-        if self.rectangleType == 'SPOT AREA':
+        if self.rectangleType == RectangleType.SPOT_AREA:
             groupSuffix = 'NewSpot'
-            uniqueSuffix = 'spotRect'
-            colour = 'blue'
             self.text_label="spot area"
 
-        self.spotPointCount += 1
-        self.groupTag = groupSuffix + str(self.spotPointCount)
-        self.uniqueTag = uniqueSuffix + str(self.spotPointCount)
-        self.thisSpotID = self.groupTag
-        self.rectStart_x = self.myCanvas.canvasx(event.x)
-        self.rectStart_y = self.myCanvas.canvasy(event.y)
-        self.rectangle = self.myCanvas.create_rectangle(self.rectStart_x, self.rectStart_y, self.rectStart_x + 1,
-                                                        self.rectStart_y + 1, width=3, outline=colour,
-                                                        activefill='yellow', activeoutline='yellow',
-                                                        tags=(self.groupTag, self.uniqueTag))
-        self.Type = 'RECTANGLE'
+        groupTag = groupSuffix +str(uuid.uuid4())
+        rectStart_x = self.myCanvas.canvasx(event.x)
+        rectStart_y = self.myCanvas.canvasy(event.y)
+        self.rectangle = Rectangle(rectStart_x,rectStart_y, rectStart_x + 1,rectStart_y + 1,self.rectangleType,groupTag)
+
+        self.draw_interactive_rectange(self.rectangle)
 
     def RectUpdateCoords(self, event):
-        self.updatedX = self.myCanvas.canvasx(event.x)
-        self.updatedY = self.myCanvas.canvasy(event.y)
-        self.myCanvas.coords(self.rectangle, self.rectStart_x, self.rectStart_y, self.updatedX, self.updatedY)
+        self.rectangle.x1 = self.myCanvas.canvasx(event.x)
+        self.rectangle.y1 = self.myCanvas.canvasy(event.y)
+        self.myCanvas.coords(self.rectangle.unique_tag, self.rectangle.x0, self.rectangle.y0, self.rectangle.x1, self.rectangle.y1)
 
     def RectFinalCoords(self, event):
-        colour = ''
-        if self.rectangleType == 'DUPLICATE':
-            colour = 'red'
-        if self.rectangleType == 'SPOT AREA':
-            colour = 'blue'
-
-        self.myCanvas.create_text(self.rectStart_x, self.rectStart_y - 15, text=self.text_label, fill=colour,font=("Helvetica", 12, "bold"), tags=self.groupTag)
-        self.text_label=''
-
-        self.save_rectangle_to_json(self.rectStart_x, self.rectStart_y, self.updatedX, self.updatedY,self.rectangleType,self.uniqueTag)
+        self.draw_interactive_rectange(self.rectangle)
+        self.model.save_drawing_object_to_json(self.rectangle)
 
     def capture_spot(self, drawSpotEvent):
         x0 = self.myCanvas.canvasx(drawSpotEvent.x)
@@ -333,12 +299,6 @@ class Drawing():
     def finish_breakline(self,mouse_event):
         self.model.insert_new_breakline_to_pairslist(self.lineStart_x, self.lineStart_y, self.updatedX, self.updatedY)
 
-    def Draw_Contours(self):
-        for key, contour_polygon in self.contourList.items():
-            if contour_polygon.size() == 1:
-                pass
-            self.myCanvas.create_polygon(contour_polygon.flattened_coordinates(), fill='', outline='red', activeoutline='yellow', width=1,
-                                         tags=(contour_polygon.groupTag, contour_polygon.uniqueTag))
 
     def display_spots_during_measurement(self,spotList):
 
@@ -406,7 +366,7 @@ class Drawing():
         self.myCanvas.create_rectangle(rectangle.x0, rectangle.y0, rectangle.x1, rectangle.y1, width=3, outline=rectangle.get_colour(), activefill='yellow',
                                        activeoutline='yellow',
                                        tags=rectangle.get_tags())
-        self.myCanvas.create_text(rectangle.x0, rectangle.y0 - 15, text=rectangle.type(), fill='red', font=("Helvetica", 12, "bold"),
+        self.myCanvas.create_text(rectangle.x0, rectangle.y0 - 15, text=rectangle.type.value, fill=rectangle.get_colour(), font=("Helvetica", 12, "bold"),
                                   tags=rectangle.get_text_tags())
 
     def draw_interactive_spot(self, spot,colour):
@@ -421,3 +381,15 @@ class Drawing():
         self.myCanvas.create_line(scale.x0, scale.y0, scale.x1, scale.y1, width=3, fill='red', activefill='yellow',
                                   tags=scale.get_tags())
         # self.myCanvas.tag_bind(ID,'<ButtonPress-1>', self.onClick)
+
+    def draw_contour(self, contour):
+        coords=contour.flatten_coordinates()
+        size = contour.size()
+        if size<2:
+            return # if there is only one point, don't draw any lines.
+
+        self.myCanvas.delete(self.uniqueTag)  # delete all pre-existing lines and redraw
+        if size > 2:
+            self.myCanvas.create_polygon(coords, fill='', outline='red', activeoutline='yellow', width=1, tags=contour.get_tags())  # redraw,now includes the added point
+        else:
+            self.myCanvas.create_line(coords, fill='red', activefill='yellow', width=1, tags=contour.get_tags())  # if there are only two points, its a line not a polygon

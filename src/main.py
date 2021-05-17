@@ -4,5 +4,9 @@ from tkinter import Tk
 
 root = Tk()
 model = Model()
-my_gui = Application(root,model)
+view = Application(root,model)
+
+model.set_source_folder_paths('/home/matthew/Code/ZirconSeparation/test/files','/home/matthew/Code/ZirconSeparation/test/files')
+model.read_sampleID_and_spots_from_json()
+view.update_data_capture_display()
 root.mainloop()

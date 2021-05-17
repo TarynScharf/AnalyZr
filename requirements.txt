@@ -1,5 +1,5 @@
 matplotlib >=3.0, <4
-scikit-image >=0.18, <1
+# scikit-image >=0.19, <1 -- Not currently released, have to download and install from source
 Pillow >= 8.2, <9
 shapely >=1.7, <2
 numpy >=1.20, <2
