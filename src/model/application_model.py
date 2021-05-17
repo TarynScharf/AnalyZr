@@ -15,7 +15,10 @@ from PIL import Image
 from scipy import ndimage
 
 from src.model import ZirconSeparationUtils, zircon_measurement_utils
-from src.model.drawing_objects.contour_polygon import ContourPolygon
+from src.model.composite_contour import CompositeContour
+from src.model.drawing_objects.breakline import Breakline
+from src.model.drawing_objects.contour import Contour
+from src.model.drawing_objects.rectangle import RectangleType
 from src.model.image_data import ImageData
 from src.model.region_measurements import RegionMeasurement
 
@@ -28,8 +31,8 @@ class Model():
 
 
         self.maskPath = ''
-        self.contourList = {}  # a list of all the polygon objects to turn into  binary masks
-        self.last_contour_deleted = {}  # this dictionary will hold the last contour deleted, incase of an undo
+        self.contours_by_group_tag = {}  # a list of all the polygon objects to turn into  binary masks
+        self.deleted_contours = []  # in case of an undo
         self.Current_Image = 'TL'  # tracks which image type is displayed
         self.width = 0  # used to set image dimensions on canvas, and in saved images. Ensures saved images have the same dimensions as input images. Important for relating spots to images, spatially.
         self.height = 0  # used to set image dimensions on canvas, and in saved images. Ensures saved images have the same dimensions as input images. Important for relating spots to images, spatially.
@@ -42,7 +45,6 @@ class Model():
         self.spotPointCount = 0
 
         self.text_label = ''  # label for duplicate grains and spot scales
-        self.new_boundary = None  # when a polygon is manually draw, it is saved to this variable.
         self.count = 0  # Used to put id's onto break  lines
 
         self.x0 = None
@@ -73,47 +75,44 @@ class Model():
 
         self.current_image_index = 0 #incrementor that keeps track of where we are in the list of images when displaying them for data capture
 
-    def DeleteObject(self, thisObjID,coords):
-        if thisObjID == "Image":  # make sure you haven't selected the image
-            return
-
-        if 'line_' in thisObjID: #breaklines don't get written to a json file
+    def DeleteObject(self, group_tag, coords):
+        if 'line_' in group_tag: #breaklines don't get written to a json file
             x1 = coords[0]
             y1 = coords[1]
             x2 = coords[2]
             y2 = coords[3]
             self.pairsList.remove([(x1,y1),(x2,y2)])
 
-        elif 'contour_' in thisObjID:
-            self.last_contour_deleted.clear()  # only keeps the last contour deleted
-            self.last_contour_deleted[thisObjID] = self.contourList[thisObjID]  # store the last contour to be deleted
-            del self.contourList[thisObjID]
+        elif 'contour_' in group_tag:
+            self.delete_contour(group_tag)
 
-        elif 'extcont_' in thisObjID:
-            contour_coords = self.contourList[thisObjID].paired_coordinates()
+        elif 'extcont_' in group_tag:
+            contour_coords = self.contours_by_group_tag[group_tag].paired_coordinates()
             polygon = shapely.Polygon(contour_coords)  # create a shapely polygon
             representative_point = polygon.representative_point()  # using the shapely polygon, get a point inside the polygon
             self.threshold = skimage.label(self.threshold, background=0, connectivity=None).astype('uint8')
             blob_label = self.threshold[int(representative_point.y),int(representative_point.x)]
             if int(blob_label)!=0:
                 self.threshold[self.threshold==blob_label]=0
-            self.last_contour_deleted.clear() #only keeps the last contour deleted
-            self.last_contour_deleted[thisObjID] = self.contourList[thisObjID] #store the last contour to be deleted
-            del self.contourList[thisObjID]
+            self.delete_contour(group_tag)
 
         else:
             with open(os.path.join(self.json_folder_path, self.image_iterator_current[0]), errors='ignore') as jsonFile:  # open the json file for the image
                 data = json.load(jsonFile)
             for i in range(0, len(data['regions'])):  # If the object already exists in the json
-                if data['regions'][i]['id'] == thisObjID:
+                if data['regions'][i]['id'] == group_tag:
                     data['regions'].pop(i)  # get rid of it. Don't read further (affects incrementor?)
                     break
             with open(os.path.join(self.json_folder_path, self.image_iterator_current[0]), 'w', errors='ignore') as updatedFile:
                 json.dump(data, updatedFile, indent=4)  # rewrite the json without the object
             try:
-                self.unique_sample_numbers[self.currentSample].discard(thisObjID)
+                self.unique_sample_numbers[self.currentSample].discard(group_tag)
             except:
                 pass
+
+    def delete_contour(self, group_tag):
+        self.deleted_contours.append(self.contours_by_group_tag[group_tag])  # store the last contour to be deleted
+        del self.contours_by_group_tag[group_tag]
 
     def SavePolygon(self):
         x_list = []
@@ -149,33 +148,17 @@ class Model():
         self.uniqueTag = None
         self.groupTag = None
 
-    def add_polygon_vertex(self, x0,y0,uniqueTag, groupTag):
-        xy = [x0, y0]
-        coordID = 'p' + str(datetime.datetime.now())  # each point gets its own unique id
-        if uniqueTag not in self.allPolys:
-            polygon = ContourPolygon(groupTag)
-            self.allPolys[uniqueTag] = polygon
-        else:
-            polygon = self.allPolys[uniqueTag]
 
-        polygon.add_vertex(x0,y0,coordID)
-        polygon.groupTag = groupTag
-        polygon.uniqueTag = uniqueTag
+    def complete_polygon(self, contour):
+        self.allPolys[contour.unique_tag] = contour
+        self.SaveBreakChanges(contour.paired_coordinates())
 
-        self.view.update_polygon(polygon)
+    def SaveBreakChanges(self,new_boundary):
+        updatedMask = self.convert_contours_to_mask_image(self.height, self.width, self.contours_by_group_tag)
 
-    def complete_polygon(self, uniqueTag):
-        polygon = self.allPolys[uniqueTag]
-        self.new_boundary = polygon.paired_coordinates()
-        self.SaveBreakChanges()
-
-    def SaveBreakChanges(self):
-        updatedMask = self.convert_contours_to_mask_image(self.height, self.width, self.contourList)
-
-        if self.new_boundary != None: # if the user has digitised a new grain boundary manually
-            points = np.array(self.new_boundary,'int32')
+        if new_boundary != None: # if the user has digitised a new grain boundary manually
+            points = np.array(new_boundary,'int32')
             updatedMask = cv2.fillPoly(updatedMask,[points], color=(255,255,255))
-            self.new_boundary = None
 
         if self.pairsList != []:
             pairs = self.pairsList
@@ -209,7 +192,7 @@ class Model():
         # paint the contours on
         contoursFinal, hierarchyFinal = cv2.findContours(self.threshold, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
         count_contour = 0
-        self.contourList.clear()
+        self.contours_by_group_tag.clear()
         for i in range(len(contoursFinal)):
             if len(contoursFinal[i]) < 3:
                 continue
@@ -219,11 +202,12 @@ class Model():
 
             coordinate_pairs = np.squeeze(contoursFinal[i])
             groupID = prefix+"_" + str(count_contour)
-            uniqueID = prefix+"_" + str(count_contour)
-            polygon = ContourPolygon(groupID, uniqueID, coordinate_pairs)
-            self.contourList[uniqueID] = polygon
-            self.view.draw_polygon(polygon)
+            polygon = Contour(groupID, coordinate_pairs)
+            self.contours_by_group_tag[polygon.group_tag] = polygon
             count_contour += 1
+
+
+        return list(self.contours_by_group_tag.values())
 
 
     def update_spot_in_json_file(self,spotID, x0,y0):
@@ -264,66 +248,19 @@ class Model():
                     with open(os.path.join(fileLocation, self.jsonName), 'w', errors='ignore') as updatedFile:
                         json.dump(data, updatedFile, indent=4)
 
-    def save_rectangle_to_json(self,rectStart_x, rectStart_y, updatedX, updatedY, rectangleType, uniqueTag):
+    def save_drawing_object_to_json(self, object):
 
         with open(os.path.join(self.json_folder_path, self.image_iterator_current[0]), errors='ignore') as jsonFile:
             data = json.load(jsonFile)
 
-        height = abs(rectStart_y - updatedY)
-        width = abs(rectStart_x - updatedX)
-
-        if rectStart_x < updatedX:  # x increases left to right
-            left = rectStart_x
-            right = updatedX
-        else:
-            left = updatedX
-            right = rectStart_x
-
-        if rectStart_y < updatedY:  # y increases top to bottom
-            top = rectStart_y
-            bottom = updatedY
-        else:
-            top = updatedY
-            bottom = rectStart_y
-
-
-        newRegion = {"id": uniqueTag, "type": "RECTANGLE", "tags": [rectangleType],
-                     "boundingBox": {"height": height, "width": width, "left": left, "top": top},
-                     "points": [{"x": left, "y": top}, {"x": right, "y": top}, {"x": right, "y": bottom},
-                                {"x": left, "y": bottom}]}
+        newRegion = object.to_json_data()
         data['regions'].append(newRegion)
 
         with open(os.path.join(self.json_folder_path, self.image_iterator_current[0]), 'w', errors='ignore') as updatedFile:
             json.dump(data, updatedFile, indent=4)
 
 
-    def save_scale_to_json(self,uniqueTag,lineStart_x, lineStart_y, updatedX, updatedY):
-        height = abs(lineStart_y - updatedY)
-        width = abs(lineStart_x - updatedX)
-
-        if lineStart_x < updatedX:  # x increases left to right
-            left = lineStart_x
-        else:
-            left = updatedX
-
-        if lineStart_y < updatedY:  # y increases top to bottom
-            top = lineStart_y
-        else:
-            top = updatedY
-
-        with open(os.path.join(self.json_folder_path, self.image_iterator_current[0]), errors='ignore') as jsonFile:
-            data = json.load(jsonFile)
-            newRegion = {"id": self.uniqueTag, "type": "SCALE", "tags": ["SCALE"],
-                         "boundingBox": {"height": height, "width": width, "left": left, "top": top},
-                         "points": [{"x": lineStart_x, "y": lineStart_y},
-                                    {"x":updatedX, "y":updatedY}]}
-            data['regions'].append(newRegion)
-
-        with open(os.path.join(self.json_folder_path, self.image_iterator_current[0]), 'w', errors='ignore') as updatedFile:
-            json.dump(data, updatedFile, indent=4)
-
-
-    def save_spot_to_json(self,spot,previous_group_tag):
+    def update_spot_in_json(self, spot, previous_group_tag):
         with open(os.path.join(self.json_folder_path, self.image_iterator_current[0]), errors='ignore') as jsonFile:
             data = json.load(jsonFile)
             anyMatch = False
@@ -394,13 +331,11 @@ class Model():
         self.threshold = cv2.imread(self.currentMask)[:, :, 0]
 
     def undo_delete_contour(self):
-        dict_key = list(self.last_contour_deleted.keys())[0]
-        self.contourList[dict_key] = self.last_contour_deleted[dict_key]
-        self.last_contour_deleted.clear()
-        if self.Current_Image== 'TL':
-            self.Load_Image(1)
-        elif self.Current_Image == 'RL':
-            self.Load_Image(0)
+        if len(self.deleted_contours)==0:
+            return None
+        contour_to_restore = self.deleted_contours.pop(-1)
+        self.contours_by_group_tag[contour_to_restore.group_tag] = contour_to_restore
+        return contour_to_restore
 
     def check_for_images_and_jsons(self, image_folder_path, json_folder_path):
         has_images = False
@@ -703,7 +638,7 @@ class Model():
                             scaleFlag = True
                             micPix = 30 / ZirconSeparationUtils.getScale(name, path, 'SPOT')
                             # print('micron per pixel: ', micPix)
-                        if region['type'] == 'RECTANGLE' and region['tags'][0] == 'DUPLICATE':
+                        if region['type'] == 'RECTANGLE' and region['tags'][0] == RectangleType.DUPLICATE:
                             x = region['boundingBox']['left'] + (region['boundingBox']['width'] / 2)
                             y = region['boundingBox']['top'] + (region['boundingBox']['height'] / 2)
                             newX = x - imageLeft
@@ -752,7 +687,7 @@ class Model():
         return '',None
 
     def create_measurement_table(self,sampleid,regionID,imageDimensions,micPix, mask_file_path):
-        self.contourList = {}
+        self.contours_by_group_tag = {}
         contoursFinal, hierarchyFinal = cv2.findContours(self.threshold, cv2.RETR_TREE,
                                                          cv2.CHAIN_APPROX_SIMPLE)  # cv2.CHAIN_APPROX_SIMPLE, cv2.RETR_EXTERNAL
         props = skimage.regionprops(self.threshold)
@@ -810,7 +745,7 @@ class Model():
         self.preprocess_image_for_measurement(mask_file_path)
 
         json_file_path = self.json_folder_path.get()  # 'C:/Users/20023951/Documents/PhD/GSWA/Geochem_Interrogate/t2_inv1_files'
-        self.contourList={}
+        self.contours_by_group_tag={}
 
         spotList, dupList, micPix, imageDimensions = self.read_spots_unwanted_scale_from_json(json_file_path,regionID)
 
@@ -868,10 +803,12 @@ class Model():
 
     def binariseImages(self,RLPath, TLPath,rlVar,tlVar):
         self.pairsList == []
-        self.contourList = {}
-        fileRL = self.RLPath.get()
-        fileTL = self.TLPath.get()
-        if fileRL != '' and self.rlVar.get() == 1:
+        self.contours_by_group_tag = {}
+        self.deleted_contours = []
+        fileRL = RLPath
+        fileTL = TLPath
+
+        if fileRL != '' and rlVar == 1:
             # Read in the files
             self.Current_Image = 'RL'
             img = cv2.imread(fileRL)
@@ -887,7 +824,7 @@ class Model():
             fillRL_uint8 = fillRL.astype('uint8')
             fillRL_uint8[fillRL_uint8 > 0] = 255
 
-        if fileTL != '' and self.tlVar.get() == 1:
+        if fileTL != '' and tlVar== 1:
             # Read in the files
             imgTL = cv2.imread(fileTL)
             self.width = imgTL.shape[1]
@@ -903,20 +840,20 @@ class Model():
             otsuInvTL_uint8 = otsuInvTL.astype('uint8')
             otsuInvTL_uint8[otsuInvTL_uint8 > 0] = 255
 
-        if fileRL != '' and fileTL != '' and self.rlVar.get() == 1 and self.tlVar.get() == 1:
+        if fileRL != '' and fileTL != '' and rlVar == 1 and tlVar == 1:
             # Add the images together:
             self.Current_Image = 'TL'
             self.threshold = cv2.add(otsuInvTL_uint8, fillRL_uint8)
             imCopy = cv2.imread(fileTL)  # import image as RGB for plotting contours in colour
-        elif fileRL != '' and self.rlVar.get() ==1 and self.tlVar.get() ==0:
+        elif fileRL != '' and rlVar ==1 and tlVar ==0:
             self.Current_Image = 'RL'
             self.threshold = fillRL_uint8  # in some cases the tl and rl images are warped and can't fit ontop of  each other. I use the RL because of the spots captured on the RL image
             imCopy = cv2.imread(fileRL)  # import image as RGB for plotting contours in colour
-        elif fileTL != '' and self.tlVar.get() ==1  and self.rlVar.get() ==0:
+        elif fileTL != '' and tlVar ==1  and rlVar ==0:
             self.Current_Image = 'TL'
             self.threshold = otsuInvTL_uint8  # in some cases the tl and rl images are warped and can't fit ontop of  each other. I use the RL because of the spots captured on the RL image
             imCopy = cv2.imread(fileTL)
-        elif fileTL != '' and fileRL != '' and self.tlVar.get() ==1  and self.rlVar.get() ==0:
+        elif fileTL != '' and fileRL != '' and tlVar ==1  and rlVar ==0:
             self.Current_Image = 'TL'
             self.threshold = otsuInvTL_uint8  # in some cases the tl and rl images are warped and can't fit ontop of  each other. I use the RL because of the spots captured on the RL image
             imCopy = cv2.imread(fileTL)
@@ -924,13 +861,15 @@ class Model():
         # Once the image is binarised, get the contours
         self.erode_small_artifacts(self.threshold)
         image_pill = Image.fromarray(imCopy)
-        self.drawing.display_image(image_pill)
+
 
         def filter_polygon_by_area(contour):
             area = cv2.contourArea(contour, False)
             return area>=50
 
-        self.extract_contours_from_image('contour',filter_polygon_by_area)
+        contours = self.extract_contours_from_image('contour',filter_polygon_by_area)
+
+        return image_pill, contours
 
     def convert_contours_to_mask_image(self,height,width, contourList):
         mask = np.zeros((height, width), dtype=np.uint8)
@@ -962,14 +901,96 @@ class Model():
     def add_new_spot(self, spot):
         self.check_spot_id_is_unique(spot.group_tag)
         self.unique_sample_numbers[self.currentSample].add(spot.group_tag)
-        self.save_spot_to_json(spot, None)
+        self.save_drawing_object_to_json(spot)
 
     def update_spot_id(self, spot, new_ID):
         self.check_spot_id_is_unique(new_ID)
         previous_group_tag = spot.group_tag
         spot.group_tag = new_ID
-        self.save_spot_to_json(spot, previous_group_tag)
+        self.update_spot_in_json(spot, previous_group_tag)
 
     def check_spot_id_is_unique(self,ID):
         if ID in self.unique_sample_numbers[self.currentSample]:
             raise Exception('Spot number already captured for PDF: ' + str(self.currentSample))
+
+    def get_current_image_contours(self):
+        return self.contours_by_group_tag
+
+    def separate(self):
+        reconstructed_points = [] #for testing
+        self.threshold = self.convert_contours_to_mask_image(self.height,self.width, self.contours_by_group_tag.values())
+
+        contours, hierarchy = cv2.findContours(self.threshold, cv2.RETR_TREE,cv2.CHAIN_APPROX_SIMPLE)  # get the new contours of the eroded masks
+        hierarchy = np.squeeze(hierarchy)
+
+        composite_contour_list = []
+        for i in range(len(contours)):
+            cnt = np.squeeze(contours[i]).tolist()
+            composite_contour = CompositeContour(np.squeeze(contours[i]),i)
+            if hierarchy.ndim == 1:
+                if hierarchy[3] == -1:
+                    composite_contour.has_parent = False
+                else:
+                    composite_contour.has_parent = True
+            else:
+                if hierarchy[i][3] == -1:
+                    composite_contour.has_parent = False
+                else:
+                    composite_contour.has_parent = True
+
+            if len(cnt) < 3: #if it is a straight line or a point, it is not a closed contour and thus not of interest
+                composite_contour.keep_contour = False
+            else:
+                composite_contour.coefficients,composite_contour.locus, composite_contour.reconstructed_points,composite_contour.keep_contour = ZirconSeparationUtils.GetCoefficients(composite_contour.original_points,composite_contour.has_parent)
+
+                if composite_contour.keep_contour == False:
+                    continue
+                composite_contour.curvature_values, composite_contour.cumulative_distance = ZirconSeparationUtils.calculateK(composite_contour.reconstructed_points, composite_contour.coefficients) #composite_contour.reconstructed_points
+                curvature_maxima_length_positions, curvature_maxima_values, curvature_maxima_x, curvature_maxima_y, non_maxima_curvature = ZirconSeparationUtils.FindCurvatureMaxima(composite_contour.curvature_values,composite_contour.cumulative_distance,composite_contour.reconstructed_points)
+                node_curvature_values, node_distance_values, node_x, node_y = ZirconSeparationUtils.IdentifyContactPoints(curvature_maxima_length_positions, curvature_maxima_values, curvature_maxima_x, curvature_maxima_y, non_maxima_curvature)
+
+                if node_curvature_values != []:
+                    composite_contour.max_curvature_values = node_curvature_values
+                    composite_contour.max_curvature_distance = node_distance_values
+                    #create_curvature_distance_plot(composite_contour)
+                else:
+                    composite_contour.keep_contour = False
+
+                if node_x !=[] and node_y !=[]:
+                    composite_contour.max_curvature_coordinates = list(zip(node_x,node_y))
+                else:
+                    composite_contour.keep_contour = False
+
+            composite_contour_list.append(composite_contour)
+        groups = ZirconSeparationUtils.FindNestedContours(hierarchy)
+
+        if self.TLPath.get() != '':
+            image_to_show = cv2.imread(self.TLPath.get())
+            is_image_binary = False
+        elif self.RLPath.get()!='':
+            image_to_show = cv2.imread(self.RLPath.get())
+            is_image_binary = False
+        else:
+            image_to_show = self.threshold
+            is_image_binary = True
+
+        # now link all nodes within the groups:
+        count = 0
+        for group in groups:
+            # get the contours that are relevant to the group in question:
+            contour_group = []
+            for index in group:
+                for contour in composite_contour_list:
+                    if contour.index == index and contour.keep_contour == True:  # watch out, what if the parent contour is removed?
+                        contour_group.append(contour)
+                        composite_contour_list.remove(contour)  # if it's added to a group to be processed, remove it from the main group so that we don't have to include it in future loops
+            if contour_group == []:
+                continue
+            pairs = ZirconSeparationUtils.linkNodes(contour_group)
+            for ((x0,y0), (x1,y1)) in pairs:
+                breakline = Breakline(x0,y0,x1,y1,'line_' + str(count))
+                count += 1
+                self.pairsList.append(breakline)
+
+        return composite_contour_list, image_to_show, is_image_binary, self.pairsList
+

@@ -100,7 +100,7 @@ class Application:
         master.bind("l", lambda e: self.drawing.DrawScale())
 
     def update_polygon(self,polygon):
-        self.drawing.draw_polygon(polygon)
+        self.drawing.draw_contour(polygon)
 
     def NextImage(self):
         self.model.next_image()
@@ -233,7 +233,7 @@ class Application:
         self.browse_for_image_folder = Button(self.browse_for_files_window, text="...", width=5, command=lambda: self.Browse('capture'))
         self.browse_for_image_folder.grid(column=2, row=0, padx=2, pady=5)
 
-        self.image_folder_path.set('/home/matthew/Code/ZirconSeparation/test/files')
+
 
         #browse for json files
         self.json_folder_Label = Label(self.browse_for_files_window, text="Json Folder")
@@ -295,6 +295,7 @@ class Application:
         self.RL_Label.grid(column=0, row=0)
         self.RLPath = tk.StringVar()
         self.RLPath.set('')
+        self.RLPath.set('/home/matthew/Code/ZirconSeparation/test/images/88411_spots_p1_RL__WqO4ozqE.png')
         self.RLTextBox = Entry(self.browseImagesWindow, width=150, textvariable=self.RLPath)
         self.RLTextBox.grid(column=1, row=0)
         self.browseRL = Button(self.browseImagesWindow, text="...", width=5, command=lambda: self.Browse('RL'))
@@ -309,6 +310,7 @@ class Application:
         self.TL_Label.grid(column=0, row=1)
         self.TLPath = tk.StringVar()
         self.TLPath.set('')
+        self.TLPath.set('/home/matthew/Code/ZirconSeparation/test/images/88411_spots_p1_TL_PnCztOBkT.png')
         self.TLTextBox = Entry(self.browseImagesWindow, width=150, textvariable=self.TLPath)
         self.TLTextBox.grid(column=1, row=1)
         self.browseTL = Button(self.browseImagesWindow, text="...", width=5, command=lambda: self.Browse('TL'))
@@ -356,7 +358,7 @@ class Application:
 
         self.BinariseButton = Button(self.browseImagesWindow, text="Binarise", command=self.binariseImages)
         self.BinariseButton.grid(column=0, row=5, padx=2, pady=5)
-        self.SeparateButton = Button(self.browseImagesWindow, text="Separate Grains", command=self.model.Separate)
+        self.SeparateButton = Button(self.browseImagesWindow, text="Separate Grains", command=self.separate)
         self.SeparateButton.grid(column=0, row=6, padx=2, pady=5)
         self.breakLine = Button(self.browseImagesWindow, text="Draw Break Line", command=self.drawing.DrawBreakLine)
         self.breakLine.grid(column=0, row=7, padx=2, pady=5)
@@ -364,21 +366,30 @@ class Application:
         self.saveChanges.grid(column=0, row=8, padx=2, pady=5)
         self.measureShapes = Button(self.browseImagesWindow, text="Measure Shapes",command=self.start_measure_shapes)
         self.measureShapes.grid(column=0, row=9, padx=2, pady=5)
-        self.pushDB = Button(self.browseImagesWindow, text="Push to DB",command=self.DBPush)
+        self.pushDB = Button(self.browseImagesWindow, text="Push to DB",command=self.model.push_shape_measurements_to_database)
         self.pushDB.grid(column=0, row=10, padx=2, pady=5)
         self.moveSpot = Button(self.browseImagesWindow, text="Reposition spot", command=self.drawing.PointMove)
         self.moveSpot.grid(column=0, row=11, padx=2, pady=5)
         self.grain_boundary_capture = Button(self.browseImagesWindow, text ="Grain Boundary Capture [p]", command=self.drawing.BoundaryDraw)
         self.grain_boundary_capture.grid(column=0, row=12, padx=2, pady=5)
 
-        self.undo_delete = Button(self.browseImagesWindow, text="Undo Delete Contour", command=self.model.undo_delete_contour)
+        self.undo_delete = Button(self.browseImagesWindow, text="Undo Delete Contour", command=self.undo_delete_contour)
         self.undo_delete.grid(column=0, row=13, padx=2, pady=5)
 
-        self.write_to_csv_button = Button(self.browseImagesWindow, text="Save to CSV", command=self.write_to_csv)
+        self.write_to_csv_button = Button(self.browseImagesWindow, text="Save to CSV", command=self.model.write_to_csv)
         self.write_to_csv_button.grid(column=0, row=14, padx=2, pady=5)
 
+    def undo_delete_contour(self):
+        contour_to_restore = self.model.undo_delete_contour()
+        if contour_to_restore is not None:
+            self.drawing.draw_contour(contour_to_restore)
+
     def binariseImages(self):
-        self.model.binariseImages(self.RLPath.get(), self.TLPath.get(),self.rlVar.get(), self.tlVar.get())
+        image,contours = self.model.binariseImages(self.RLPath.get(), self.TLPath.get(),self.rlVar.get(), self.tlVar.get())
+
+        self.drawing.display_image(image)
+        for contour in contours:
+            self.drawing.draw_contour(contour)
 
     def start_measure_shapes(self):
         mask_path = self.MaskFolderLocation.get()
@@ -439,87 +450,10 @@ class Application:
 
         self.model.write_mask_to_png(fileRL,fileTL,maskPath)
 
-    def Separate(self):
-        reconstructed_points = [] #for testing
-        self.threshold = self.convert_contours_to_mask_image()
-
-        contours, hierarchy = cv2.findContours(self.threshold, cv2.RETR_TREE,cv2.CHAIN_APPROX_SIMPLE)  # get the new contours of the eroded masks
-        hierarchy = np.squeeze(hierarchy)
-
-        composite_contour_list = []
-        for i in range(len(contours)):
-            cnt = np.squeeze(contours[i]).tolist()
-            composite_contour = CompositeContour(np.squeeze(contours[i]),i)
-            if hierarchy.ndim == 1:
-                if hierarchy[3] == -1:
-                    composite_contour.has_parent = False
-                else:
-                    composite_contour.has_parent = True
-            else:
-                if hierarchy[i][3] == -1:
-                    composite_contour.has_parent = False
-                else:
-                    composite_contour.has_parent = True
-
-            if len(cnt) < 3: #if it is a straight line or a point, it is not a closed contour and thus not of interest
-                composite_contour.keep_contour = False
-            else:
-                composite_contour.coefficients,composite_contour.locus, composite_contour.reconstructed_points,composite_contour.keep_contour = GetCoefficients(composite_contour.original_points,composite_contour.has_parent)
-
-                if composite_contour.keep_contour == False:
-                    continue
-                composite_contour.curvature_values, composite_contour.cumulative_distance = calculateK(composite_contour.reconstructed_points, composite_contour.coefficients) #composite_contour.reconstructed_points
-                curvature_maxima_length_positions, curvature_maxima_values, curvature_maxima_x, curvature_maxima_y, non_maxima_curvature = FindCurvatureMaxima(composite_contour.curvature_values,composite_contour.cumulative_distance,composite_contour.reconstructed_points)
-                node_curvature_values, node_distance_values, node_x, node_y = IdentifyContactPoints(curvature_maxima_length_positions, curvature_maxima_values, curvature_maxima_x, curvature_maxima_y, non_maxima_curvature)
-
-                if node_curvature_values != []:
-                    composite_contour.max_curvature_values = node_curvature_values
-                    composite_contour.max_curvature_distance = node_distance_values
-                    #create_curvature_distance_plot(composite_contour)
-                else:
-                    composite_contour.keep_contour = False
-
-                if node_x !=[] and node_y !=[]:
-                    composite_contour.max_curvature_coordinates = list(zip(node_x,node_y))
-                else:
-                    composite_contour.keep_contour = False
-
-            composite_contour_list.append(composite_contour)
-        groups = FindNestedContours(hierarchy)
-
-        if self.TLPath.get() != '':
-            image_to_show = cv2.imread(self.TLPath.get())
-            is_image_binary = False
-        elif self.RLPath.get()!='':
-            image_to_show = cv2.imread(self.RLPath.get())
-            is_image_binary = False
-        else:
-            image_to_show = self.threshold
-            is_image_binary = True
+    def separate(self):
+        composite_contour_list, image_to_show, is_image_binary, pairs_list = self.model.separate()
         self.drawing.plot_kvalues_on_grain_image(composite_contour_list, image_to_show, is_image_binary)
-
-
-        # now link all nodes within the groups:
-
-        count = 0
-        for group in groups:
-            # get the contours that are relevant to the group in question:
-            contour_group = []
-            for index in group:
-                for contour in composite_contour_list:
-                    if contour.index == index and contour.keep_contour == True:  # watch out, what if the parent contour is removed?
-                        contour_group.append(contour)
-                        composite_contour_list.remove(contour)  # if it's added to a group to be processed, remove it from the main group so that we don't have to include it in future loops
-            if contour_group == []:
-                continue
-            pairs = linkNodes(contour_group)
-            for ((x0,y0), (x1,y1)) in pairs:
-                breakline = Breakline(x0,y0,x1,y1,'line_' + str(count))
-                count += 1
-                self.pairsList.append(breakline)
-
         self.drawing.draw_breaklines(self.pairsList)
-
 
     def create_spot_capture_dialog(self, event):
         thisSpot = event.widget.find_withtag('current')[0]
@@ -574,6 +508,7 @@ class Application:
 
         self.drawing.display_image(image_pill)
 
-        self.Draw_Contours()
+        for polygon in self.model.get_current_image_contours():
+            self.drawing.draw_contour(polygon)
 
 

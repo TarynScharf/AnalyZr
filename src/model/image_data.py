@@ -1,4 +1,4 @@
-from src.model.drawing_objects.rectangle import Rectangle
+from src.model.drawing_objects.rectangle import Rectangle, RectangleType
 from src.model.drawing_objects.scale import Scale
 from src.model.drawing_objects.spot import Spot
 
@@ -30,9 +30,9 @@ class ImageData:
         for region in data['regions']:
             if region['type'] == 'RECTANGLE':
                 rectangle = Rectangle.fromJSONData(region)
-                if rectangle.type == "DUPLICATE":
+                if rectangle.type == RectangleType.DUPLICATE:
                     image_data.unwanted_objects.append(rectangle)
-                if rectangle.type == "SPOT AREA":
+                if rectangle.type in[RectangleType.SPOT_AREA, RectangleType.SPOT]:
                     image_data.spot_areas.append(rectangle)
 
             if region['type'] == 'POINT':
