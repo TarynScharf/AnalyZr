@@ -20,7 +20,7 @@ class Contour(DrawingObject):
     def add_vertex(self,x,y):
         self.x_coords.append(x)
         self.y_coords.append(y)
-        self.coord_ids.append('p_' + uuid.uuid4())
+        self.coord_ids.append('p_' + str(uuid.uuid4()))
 
     def flatten_coordinates(self):
         #returns x0,y0,x1,y1....etc as required by tkinter for drawing a polygon

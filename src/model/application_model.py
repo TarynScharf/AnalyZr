@@ -9,7 +9,10 @@ import cv2
 import matplotlib
 import numpy as np
 import shapely
-import skimage
+# import skimage.segmentation because else it
+# says there's no segmentation module
+#https://www.codegrepper.com/code-examples/python/AttributeError%3A+module+%27skimage%27+has+no+attribute+%27segmentation%27
+import skimage.segmentation
 from PIL import ImageTk
 from PIL import Image
 from scipy import ndimage
@@ -36,7 +39,7 @@ class Model():
         self.Current_Image = 'TL'  # tracks which image type is displayed
         self.width = 0  # used to set image dimensions on canvas, and in saved images. Ensures saved images have the same dimensions as input images. Important for relating spots to images, spatially.
         self.height = 0  # used to set image dimensions on canvas, and in saved images. Ensures saved images have the same dimensions as input images. Important for relating spots to images, spatially.
-        self.pairsList = []
+        self.breaklines = []
         self.saveLocation = 'C:/Users/20023951/Documents/PhD/GSWA/Geochem_Interrogate/Binarisation/_o.png'  # where the 1st binarised image will output to
         self.case = ''  # the function of the browse button. I.e. browse for capture, RL or TL
         self.img = None
@@ -65,7 +68,7 @@ class Model():
         self.polyCoords = []  # Coordinates of the polygon currently active. This MUST be set back to [] every time the polygon is saved
         self.coordID = []  # List of coordinate ID's for the polygon currently active. This MUST be set back to [] every time the polygon is saved
         self.Move = False  # Whether or not a move action can take place. Records true/false if an existing entity was selected
-        self.allPolys = {}  # ID-coordinate dictionary of all polygons on the page
+        self.all_contours = {}  # ID-coordinate dictionary of all polygons on the page
 
 
         self.threshold = None
@@ -81,7 +84,7 @@ class Model():
             y1 = coords[1]
             x2 = coords[2]
             y2 = coords[3]
-            self.pairsList.remove([(x1,y1),(x2,y2)])
+            self.breaklines.remove([(x1, y1), (x2, y2)])
 
         elif 'contour_' in group_tag:
             self.delete_contour(group_tag)
@@ -119,7 +122,7 @@ class Model():
         y_list = []
         polyCoords = []
 
-        for point in self.allPolys[self.uniqueTag]:
+        for point in self.all_contours[self.uniqueTag]:
             x_list.append(point[1])  # get a list of all the x-coords. This makes it easy to  get min and max x
             y_list.append(point[2])  # get a list of all the y-coords.This makes it easy to get min and max y
             polyCoords.append({"x": point[1], "y": point[2]})  # get a list of each coord pair. This makes it easy to write the poly to the json file
@@ -149,43 +152,39 @@ class Model():
         self.groupTag = None
 
 
-    def complete_polygon(self, contour):
-        self.allPolys[contour.unique_tag] = contour
-        self.SaveBreakChanges(contour.paired_coordinates())
+    def add_new_contour(self, contour):
+        self.all_contours[contour.unique_tag] = contour
+        return contour
 
-    def SaveBreakChanges(self,new_boundary):
-        updatedMask = self.convert_contours_to_mask_image(self.height, self.width, self.contours_by_group_tag)
+    def SaveBreakChanges(self,RLPath, TLPath, new_boundary = None):
+        updatedMask = self.convert_contours_to_mask_image(self.height, self.width, self.contours_by_group_tag.values())
 
         if new_boundary != None: # if the user has digitised a new grain boundary manually
-            points = np.array(new_boundary,'int32')
+            points = np.array(new_boundary.paired_coordinates(),'int32')
             updatedMask = cv2.fillPoly(updatedMask,[points], color=(255,255,255))
 
-        if self.pairsList != []:
-            pairs = self.pairsList
-            for p in pairs:
-                x1 = p[0][0]
-                y1 = p[0][1]
-                x2 = p[1][0]
-                y2 = p[1][1]
-                updatedMask = cv2.line(updatedMask, (int(x1), int(y1)), (int(x2),int(y2)), (0,0,0),2)
-            self.pairsList = []
+
+        for breakline in self.breaklines:
+            updatedMask = cv2.line(updatedMask, (int(breakline.x0), int(breakline.y0)), (int(breakline.x1),int(breakline.y1)), (0,0,0),2)
+        self.breaklines = []
 
         self.threshold = updatedMask
 
         updatedMask[updatedMask > 0] = 255
-        labelim = skimage.label(updatedMask, background=0, connectivity=None)
+        labelim = skimage.measure.label(updatedMask, background=0, connectivity=None)
         self.threshold = labelim.astype('uint8')
 
-        if self.TLPath.get() != '' and self.Current_Image=='TL':
-            original_Image = cv2.imread(self.TLPath.get())
+        if TLPath != '' and self.Current_Image=='TL':
+            original_Image = cv2.imread(TLPath)
 
-        elif self.RLPath.get() != '' and self.Current_Image=='RL':
-            original_Image = cv2.imread(self.RLPath.get())
+        elif RLPath != '' and self.Current_Image=='RL':
+            original_Image = cv2.imread(RLPath)
 
         image_pill = Image.fromarray(original_Image)
         self.img = ImageTk.PhotoImage(image=image_pill)
-        self.view.display_image(self.img)
-        self.extract_contours_from_image('extcont')
+        contours = self.extract_contours_from_image('extcont')
+
+        return image_pill, contours
 
 
     def extract_contours_from_image(self,prefix,filter_fn = None):
@@ -300,8 +299,8 @@ class Model():
         with open(os.path.join(self.json_folder_path, self.image_iterator_current[0]), 'w', errors='ignore') as updatedFile:
             json.dump(data, updatedFile, indent=4)
 
-    def insert_new_breakline_to_pairslist(self, lineStart_x, lineStart_y, updatedX, updatedY):
-        self.pairsList.append([(lineStart_x, lineStart_y), (updatedX, updatedY)])
+    def insert_new_breakline_to_pairslist(self,breakline):
+        self.breaklines.append(breakline)
 
     def set_json_folder_path(self,path):
         self.json_folder_path.set(path)
@@ -802,7 +801,7 @@ class Model():
         print(self.dfShapeRounded) '''
 
     def binariseImages(self,RLPath, TLPath,rlVar,tlVar):
-        self.pairsList == []
+        self.breaklines == []
         self.contours_by_group_tag = {}
         self.deleted_contours = []
         fileRL = RLPath
@@ -860,6 +859,8 @@ class Model():
 
         # Once the image is binarised, get the contours
         self.erode_small_artifacts(self.threshold)
+        self.width = self.threshold.shape[1]
+        self.height = self.threshold.shape[0]
         image_pill = Image.fromarray(imCopy)
 
 
@@ -869,7 +870,7 @@ class Model():
 
         contours = self.extract_contours_from_image('contour',filter_polygon_by_area)
 
-        return image_pill, contours
+        return image_pill, contours, self.width, self.height
 
     def convert_contours_to_mask_image(self,height,width, contourList):
         mask = np.zeros((height, width), dtype=np.uint8)
@@ -916,7 +917,11 @@ class Model():
     def get_current_image_contours(self):
         return self.contours_by_group_tag
 
-    def separate(self):
+    def separate(self,TLPath, RLPath):
+        def filter_polygon_by_area(contour):
+            area = cv2.contourArea(contour, False)
+            return area>=50
+
         reconstructed_points = [] #for testing
         self.threshold = self.convert_contours_to_mask_image(self.height,self.width, self.contours_by_group_tag.values())
 
@@ -927,48 +932,49 @@ class Model():
         for i in range(len(contours)):
             cnt = np.squeeze(contours[i]).tolist()
             composite_contour = CompositeContour(np.squeeze(contours[i]),i)
+            composite_contour_list.append(composite_contour)
+
             if hierarchy.ndim == 1:
-                if hierarchy[3] == -1:
-                    composite_contour.has_parent = False
-                else:
-                    composite_contour.has_parent = True
+                composite_contour.has_parent = hierarchy[3] != -1
             else:
-                if hierarchy[i][3] == -1:
-                    composite_contour.has_parent = False
-                else:
-                    composite_contour.has_parent = True
+                composite_contour.has_parent = hierarchy[i][3] != -1
 
             if len(cnt) < 3: #if it is a straight line or a point, it is not a closed contour and thus not of interest
                 composite_contour.keep_contour = False
+                continue
+
+            get_coefficients_result = ZirconSeparationUtils.get_efd_parameters_for_simplified_contour(composite_contour.original_points, composite_contour.has_parent, filter_polygon_by_area)
+            if get_coefficients_result is None:
+                composite_contour.keep_contour = False
+                continue
+            composite_contour.coefficients, composite_contour.locus, composite_contour.reconstructed_points = get_coefficients_result
+
+
+
+            composite_contour.curvature_values, composite_contour.cumulative_distance = ZirconSeparationUtils.calculateK(composite_contour.reconstructed_points, composite_contour.coefficients) #composite_contour.reconstructed_points
+            curvature_maxima_length_positions, curvature_maxima_values, curvature_maxima_x, curvature_maxima_y, non_maxima_curvature = ZirconSeparationUtils.FindCurvatureMaxima(composite_contour.curvature_values,composite_contour.cumulative_distance,composite_contour.reconstructed_points)
+            node_curvature_values, node_distance_values, node_x, node_y = ZirconSeparationUtils.IdentifyContactPoints(curvature_maxima_length_positions, curvature_maxima_values, curvature_maxima_x, curvature_maxima_y, non_maxima_curvature)
+
+            if node_curvature_values != []:
+                composite_contour.max_curvature_values = node_curvature_values
+                composite_contour.max_curvature_distance = node_distance_values
+                #create_curvature_distance_plot(composite_contour)
             else:
-                composite_contour.coefficients,composite_contour.locus, composite_contour.reconstructed_points,composite_contour.keep_contour = ZirconSeparationUtils.GetCoefficients(composite_contour.original_points,composite_contour.has_parent)
+                composite_contour.keep_contour = False
 
-                if composite_contour.keep_contour == False:
-                    continue
-                composite_contour.curvature_values, composite_contour.cumulative_distance = ZirconSeparationUtils.calculateK(composite_contour.reconstructed_points, composite_contour.coefficients) #composite_contour.reconstructed_points
-                curvature_maxima_length_positions, curvature_maxima_values, curvature_maxima_x, curvature_maxima_y, non_maxima_curvature = ZirconSeparationUtils.FindCurvatureMaxima(composite_contour.curvature_values,composite_contour.cumulative_distance,composite_contour.reconstructed_points)
-                node_curvature_values, node_distance_values, node_x, node_y = ZirconSeparationUtils.IdentifyContactPoints(curvature_maxima_length_positions, curvature_maxima_values, curvature_maxima_x, curvature_maxima_y, non_maxima_curvature)
+            if node_x !=[] and node_y !=[]:
+                composite_contour.max_curvature_coordinates = list(zip(node_x,node_y))
+            else:
+                composite_contour.keep_contour = False
 
-                if node_curvature_values != []:
-                    composite_contour.max_curvature_values = node_curvature_values
-                    composite_contour.max_curvature_distance = node_distance_values
-                    #create_curvature_distance_plot(composite_contour)
-                else:
-                    composite_contour.keep_contour = False
 
-                if node_x !=[] and node_y !=[]:
-                    composite_contour.max_curvature_coordinates = list(zip(node_x,node_y))
-                else:
-                    composite_contour.keep_contour = False
-
-            composite_contour_list.append(composite_contour)
         groups = ZirconSeparationUtils.FindNestedContours(hierarchy)
 
-        if self.TLPath.get() != '':
-            image_to_show = cv2.imread(self.TLPath.get())
+        if TLPath != '':
+            image_to_show = cv2.imread(TLPath)
             is_image_binary = False
-        elif self.RLPath.get()!='':
-            image_to_show = cv2.imread(self.RLPath.get())
+        elif RLPath!='':
+            image_to_show = cv2.imread(RLPath)
             is_image_binary = False
         else:
             image_to_show = self.threshold
@@ -983,14 +989,14 @@ class Model():
                 for contour in composite_contour_list:
                     if contour.index == index and contour.keep_contour == True:  # watch out, what if the parent contour is removed?
                         contour_group.append(contour)
-                        composite_contour_list.remove(contour)  # if it's added to a group to be processed, remove it from the main group so that we don't have to include it in future loops
+                        #composite_contour_list.remove(contour)  # if it's added to a group to be processed, remove it from the main group so that we don't have to include it in future loops
             if contour_group == []:
                 continue
             pairs = ZirconSeparationUtils.linkNodes(contour_group)
             for ((x0,y0), (x1,y1)) in pairs:
                 breakline = Breakline(x0,y0,x1,y1,'line_' + str(count))
                 count += 1
-                self.pairsList.append(breakline)
+                self.breaklines.append(breakline)
 
-        return composite_contour_list, image_to_show, is_image_binary, self.pairsList
+        return composite_contour_list, image_to_show, is_image_binary, self.breaklines
 

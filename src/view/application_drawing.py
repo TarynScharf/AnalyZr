@@ -1,14 +1,22 @@
 import tkinter as tk
 import uuid
+from datetime import datetime
 from tkinter import *
 from tkinter.ttk import *
 
 import PIL
 from PIL import ImageTk
+import matplotlib
+import matplotlib.pyplot as plt
+from matplotlib.backends.backend_agg import FigureCanvasAgg
+import numpy as np
 
+from src.model.drawing_objects.breakline import Breakline
+from src.model.drawing_objects.contour import Contour
 from src.model.drawing_objects.rectangle import Rectangle, RectangleType
 from src.model.drawing_objects.spot import Spot
 import src.model.drawing_objects.scale as scale
+
 
 class Drawing():
     def __init__(self,frame,model,view):
@@ -39,6 +47,7 @@ class Drawing():
         self.scaleLine = None
         self.imgCount = 0
         self.rectangleType = None
+        self.breakline = None
 
     def DeleteObject(self, event):
         thisObj = event.widget.find_withtag('current')[0]  # get the object clicked on
@@ -140,12 +149,15 @@ class Drawing():
         x0 = self.myCanvas.canvasx(polyDrawEvent.x)
         y0 = self.myCanvas.canvasy(polyDrawEvent.y)
         self.contour.add_vertex(x0,y0)
-        self.view.update_polygon(polygon)
+        self.myCanvas.delete(self.contour.unique_tag)
+        self.draw_contour(self.contour)
+
 
 
     def PolyComplete(self, event):
         self.myCanvas.unbind("<ButtonPress-2>")  # unbind from polygon digitisation
-        self.model.complete_polygon(self.contour)
+        new_polygon = self.model.add_new_contour(self.contour)
+        self.view.SaveBreakChanges(new_polygon)
 
     def display_image(self, image):
         self.myCanvas.delete('all')
@@ -272,32 +284,31 @@ class Drawing():
         self.myCanvas.bind("<Button-1>", self.capture_spot)
 
     def DrawBreakLine(self):
-        # print('DrawScale')
         self.myCanvas.unbind("<Button-1>")
         self.myCanvas.unbind("<ButtonPress-1>")
         self.myCanvas.unbind("<B1-Motion>")
         self.myCanvas.unbind("<ButtonRelease-1>")
         self.myCanvas.bind("<ButtonPress-1>", self.BreakLineStart)
         self.myCanvas.bind("<B1-Motion>", self.BreakLineUpdate)
-        self.myCanvas.bind("<ButtonRelease-1>", self.finish_breakline())
+        self.myCanvas.bind("<ButtonRelease-1>", self.finish_breakline)
 
     def BreakLineStart(self, event):
-        t_ID = 'line_' + str(datetime.datetime.now())
-        ID = t_ID.replace(' ', '')
+        group_tag = 'line_' + str(uuid.uuid4())
         colour = 'red'
-        self.lineStart_x = self.myCanvas.canvasx(event.x)
-        self.lineStart_y = self.myCanvas.canvasy(event.y)
-        self.Line = self.myCanvas.create_line(self.lineStart_x, self.lineStart_y, self.lineStart_x + 1,
-                                              self.lineStart_y + 1, width=3, fill=colour, activefill='yellow',tags=(ID))
+        x0 = self.myCanvas.canvasx(event.x)
+        y0 = self.myCanvas.canvasy(event.y)
+        self.breakline = Breakline(x0,y0,x0+1, y0+1,group_tag)
+        self.draw_interactive_breakline(self.breakline)
 
     def BreakLineUpdate(self, moveEvent):
         self.myCanvas.unbind("<ButtonPress-1>")
-        self.updatedX = self.myCanvas.canvasx(moveEvent.x)
-        self.updatedY = self.myCanvas.canvasy(moveEvent.y)
-        self.myCanvas.coords(self.Line, self.lineStart_x, self.lineStart_y, self.updatedX, self.updatedY)
+        self.breakline.x1 = self.myCanvas.canvasx(moveEvent.x)
+        self.breakline.y1 = self.myCanvas.canvasy(moveEvent.y)
+        self.myCanvas.coords(self.breakline.unique_tag, self.breakline.x0, self.breakline.y0, self.breakline.x1, self.breakline.y1)
 
     def finish_breakline(self,mouse_event):
-        self.model.insert_new_breakline_to_pairslist(self.lineStart_x, self.lineStart_y, self.updatedX, self.updatedY)
+        self.model.insert_new_breakline_to_pairslist(self.breakline)
+        self.breakline = None
 
 
     def display_spots_during_measurement(self,spotList):
@@ -310,9 +321,9 @@ class Drawing():
             self.myCanvas.create_text(spotX-7,spotY-7,fill='green', text=spotID, tags=('s_'+str(spotID), 'spotno_'+str(spotID)))
 
 
-    def plot_kvalues_on_grain_image(self, underlying_image, is_binary_image, composite_contour_list):
+    def plot_kvalues_on_grain_image(self, composite_contour_list, underlying_image, is_binary_image, image_width, image_height):
         dpi = 100
-        fig = plt.figure(figsize=(self.width / dpi, self.height / dpi))
+        fig = plt.figure(figsize=(image_width / dpi, image_height / dpi))
         ax = fig.add_axes([0, 0, 1, 1])
         matplotlib.use('Agg')
         canvas = FigureCanvasAgg(fig)
@@ -334,7 +345,8 @@ class Drawing():
             #    text= str(xmax[i])+" | "+str(ymax[i])
              #   plt.text(xmax[i]+1,ymax[i]+3,c = 'red', s=text, size="medium")
 
-            sc=plt.scatter(xmax,ymax,facecolors='none',edgecolors='red',s=7,linewidth=1)
+            plt.scatter(xmax,ymax,facecolors='none',edgecolors='red',s=7,linewidth=1)
+            #sc=plt.scatter(xmax,ymax,facecolors='none',edgecolors='red',s=7,linewidth=1)
             #cbaxis = fig.add_axes([0.9,0.1,0.03,0.8])
             #cbar = plt.colorbar(sc, cax=cbaxis)
             #cbar.set_label('Curvature (K)', rotation=270, labelpad=20)
@@ -342,8 +354,8 @@ class Drawing():
 
         canvas_data, (canvas_width,canvas_height) = canvas.print_to_buffer()  # taken from here: https://matplotlib.org/3.1.1/gallery/user_interfaces/canvasagg.html
         image_matrix = np.frombuffer(canvas_data, np.uint8).reshape((canvas_height, canvas_width, 4))
-        image_pill = Image.frombytes("RGBA", (canvas_width, canvas_height), image_matrix)
-        self.drawing.display_image(image_pill)
+        image_pill = PIL.Image.frombytes("RGBA", (canvas_width, canvas_height), image_matrix)
+        self.display_image(image_pill)
 
     def draw_image_data(self, image_data):
         for spot in image_data.spots:
@@ -358,9 +370,8 @@ class Drawing():
         if image_data.scale is not None:
             self.draw_interactive_scale(image_data.scale)
 
-    def draw_breaklines(self, breaklines):
-        for line in breaklines:
-            self.myCanvas.create_line(line.x0, line.y0, line.x1, line.y1, width=2, fill='red', activefill='yellow', tags=line.tag)
+    def draw_interactive_breakline(self, line):
+        self.myCanvas.create_line(line.x0, line.y0, line.x1, line.y1, width=2, fill='red', activefill='yellow', tags=line.get_tags())
 
     def draw_interactive_rectange(self, rectangle):
         self.myCanvas.create_rectangle(rectangle.x0, rectangle.y0, rectangle.x1, rectangle.y1, width=3, outline=rectangle.get_colour(), activefill='yellow',

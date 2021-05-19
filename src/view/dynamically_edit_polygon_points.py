@@ -26,7 +26,7 @@ def SelectPolygon(self, selectEvent):
             coordID = 'p' + str(datetime.datetime.now())
             coordList.append([coordID, contour_coords[x], contour_coords[x + 1]])
             self.myCanvas.create_oval(x0, y0, x1, y1, fill='white', activefill='yellow', activeoutline='yellow', outline='grey', width=2, tags=(self.groupTag, coordID))
-        self.allPolys[self.groupTag] = coordList
+        self.all_contours[self.groupTag] = coordList
         self.PointMove()
     else:
         error_message_text = 'Select a polygon to edit'
@@ -54,7 +54,7 @@ def StartInsertPoint(self, addEvent):
     self.y0 = self.myCanvas.canvasy(addEvent.y)
 
     # Find the nearest point in the polygon array:
-    for point in self.allPolys[self.uniqueTag]:
+    for point in self.all_contours[self.uniqueTag]:
         delta_x = abs(self.x0 - point[1])
         delta_y = abs(self.y0 - point[2])
         tot_diff = delta_x + delta_y
@@ -64,15 +64,15 @@ def StartInsertPoint(self, addEvent):
 
     # find out if the new point lies left or right of this closest point, so we know where to insert the new point in the polygon coordinate array
     # There is an assumption that the polygon is always digitised anticlockwise. This isn't great.
-    closestX = self.allPolys[self.uniqueTag][incr][1]
-    closestY = self.allPolys[self.uniqueTag][incr][2]
+    closestX = self.all_contours[self.uniqueTag][incr][1]
+    closestY = self.all_contours[self.uniqueTag][incr][2]
     try:
-        nextX = self.allPolys[self.uniqueTag][incr + 1][1]
-        nextY = self.allPolys[self.uniqueTag][incr + 1][2]
+        nextX = self.all_contours[self.uniqueTag][incr + 1][1]
+        nextY = self.all_contours[self.uniqueTag][incr + 1][2]
     except:
         # if incr+1 goes beyond the list length, then look at the first point in the list
-        nextX = self.allPolys[self.uniqueTag][0][1]
-        nextY = self.allPolys[self.uniqueTag][0][2]
+        nextX = self.all_contours[self.uniqueTag][0][1]
+        nextY = self.all_contours[self.uniqueTag][0][2]
 
     firstRight = None  # bool -  is the new point right of the closest existing point
     secondRight = None  # bool - is the new point right of the next(in direction of incrementor) point
@@ -118,8 +118,8 @@ def StartInsertPoint(self, addEvent):
                               activeoutline='yellow', outline='grey',
                               width=2, tags=(self.groupTag, p))  # draw the newly inserted point
     # redraw the new polygon
-    self.allPolys[self.uniqueTag].insert(insertIncr, [p, self.x0, self.y0])
-    for points in self.allPolys[self.uniqueTag]:
+    self.all_contours[self.uniqueTag].insert(insertIncr, [p, self.x0, self.y0])
+    for points in self.all_contours[self.uniqueTag]:
         coords.append([points[1], points[2]])
     self.myCanvas.create_polygon(coords, fill='', outline='red', width=1, tags=(self.groupTag, self.uniqueTag))
     # self.SavePolygon()
@@ -129,7 +129,7 @@ def StartInsertPoint(self, addEvent):
         y_list = []
         polyCoords = []
 
-        for point in self.allPolys[self.uniqueTag]:
+        for point in self.all_contours[self.uniqueTag]:
             x_list.append(point[1])  # get a list of all the x-coords. This makes it easy to  get min and max x
             y_list.append(point[2])  # get a list of all the y-coords.This makes it easy to get min and max y
             polyCoords.append({"x": point[1], "y": point[2]})  # get a list of each coord pair. This makes it easy to write the poly to the json file

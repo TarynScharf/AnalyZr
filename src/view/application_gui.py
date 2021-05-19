@@ -1,4 +1,5 @@
 import tkinter as tk
+import traceback
 from tkinter import *
 from tkinter import filedialog
 from tkinter.ttk import *
@@ -24,6 +25,9 @@ class Application:
         self.model = model
         master.title("Zircon Shape Analysis")
         master.geometry('1600x3000')
+
+        # Reroute exceptions to display a message box to the user
+        #sys.excepthook = self.exception_hook
 
         self.myFrame = tk.Frame(master, width=1600, height=3000)
         self.myFrame.pack(expand=True, fill='both')
@@ -84,6 +88,8 @@ class Application:
         # Image name, so  we know which image we're working on
         self.label = Label(self.myMenuFrame, text='')
         self.label.grid(column=1, row=0, padx=5, pady=10)
+        self.width = None #width of displayed image
+        self.height = None #height of displaed image
 
         self.json_folder_path = tk.StringVar()
 
@@ -99,8 +105,21 @@ class Application:
         master.bind("m", lambda e: self.drawing.PointMove())
         master.bind("l", lambda e: self.drawing.DrawScale())
 
-    def update_polygon(self,polygon):
-        self.drawing.draw_contour(polygon)
+    def exception_hook(self, exception_type, value, tb) -> None:
+        """
+        Method to hook into Python's exception handling mechanism to display any errors that occur in the UI
+        as well as in the console.
+        """
+        #if isinstance(value, ExpectedException):
+        #    self.view.show_expected_error(str(value))
+        #    return
+
+        sys.__excepthook__(exception_type, value, tb)
+        error = str(value) + "\n" + "".join(traceback.format_tb(tb))
+        #self.view.show_unexpected_error(error)
+        self.open_error_message_popup_window(error)
+
+
 
     def NextImage(self):
         self.model.next_image()
@@ -295,7 +314,8 @@ class Application:
         self.RL_Label.grid(column=0, row=0)
         self.RLPath = tk.StringVar()
         self.RLPath.set('')
-        self.RLPath.set('/home/matthew/Code/ZirconSeparation/test/images/88411_spots_p1_RL__WqO4ozqE.png')
+        #self.RLPath.set('/home/matthew/Code/ZirconSeparation/test/images/88411_spots_p1_RL__WqO4ozqE.png')
+        self.RLPath.set('C:/Users/20023951/PycharmProjects/ZirconSeparation/test/images/88411_spots_p1_RL__WqO4ozqE.png')
         self.RLTextBox = Entry(self.browseImagesWindow, width=150, textvariable=self.RLPath)
         self.RLTextBox.grid(column=1, row=0)
         self.browseRL = Button(self.browseImagesWindow, text="...", width=5, command=lambda: self.Browse('RL'))
@@ -310,7 +330,7 @@ class Application:
         self.TL_Label.grid(column=0, row=1)
         self.TLPath = tk.StringVar()
         self.TLPath.set('')
-        self.TLPath.set('/home/matthew/Code/ZirconSeparation/test/images/88411_spots_p1_TL_PnCztOBkT.png')
+        self.TLPath.set('C:/Users/20023951/PycharmProjects/ZirconSeparation/test/images/88411_spots_p1_TL_PnCztOBkT.png')
         self.TLTextBox = Entry(self.browseImagesWindow, width=150, textvariable=self.TLPath)
         self.TLTextBox.grid(column=1, row=1)
         self.browseTL = Button(self.browseImagesWindow, text="...", width=5, command=lambda: self.Browse('TL'))
@@ -330,7 +350,7 @@ class Application:
         self.MaskTextBox.grid(column=1, row=2)
         self.browseMask = Button(self.browseImagesWindow, text="...",width = 5, command=lambda: self.Browse('Mask'))
         self.browseMask.grid(column=3, row=2, padx=2, pady=5)
-        self.saveMask = Button(self.browseImagesWindow, text="Save Mask", command=lambda: self.model.SaveMask())
+        self.saveMask = Button(self.browseImagesWindow, text="Save Mask", command=lambda: self.SaveMask())
         self.saveMask.grid(column=4, row=2, padx=2, pady=5)
 
         self.Process_Image = Label(self.browseImagesWindow, text="Process Mask Image")
@@ -362,7 +382,7 @@ class Application:
         self.SeparateButton.grid(column=0, row=6, padx=2, pady=5)
         self.breakLine = Button(self.browseImagesWindow, text="Draw Break Line", command=self.drawing.DrawBreakLine)
         self.breakLine.grid(column=0, row=7, padx=2, pady=5)
-        self.saveChanges = Button(self.browseImagesWindow, text="Save Changes", command=self.model.SaveBreakChanges)
+        self.saveChanges = Button(self.browseImagesWindow, text="Save Changes", command=self.SaveBreakChanges)
         self.saveChanges.grid(column=0, row=8, padx=2, pady=5)
         self.measureShapes = Button(self.browseImagesWindow, text="Measure Shapes",command=self.start_measure_shapes)
         self.measureShapes.grid(column=0, row=9, padx=2, pady=5)
@@ -379,13 +399,22 @@ class Application:
         self.write_to_csv_button = Button(self.browseImagesWindow, text="Save to CSV", command=self.model.write_to_csv)
         self.write_to_csv_button.grid(column=0, row=14, padx=2, pady=5)
 
+    def SaveBreakChanges(self,new_contour=None):
+        RLPath = self.RLPath.get()
+        TLPath = self.TLPath.get()
+        image, contours =self.model.SaveBreakChanges(RLPath, TLPath,new_contour)
+
+        self.display_image(image)
+        for contour in contours:
+            self.drawing.draw_contour(contour)
+
     def undo_delete_contour(self):
         contour_to_restore = self.model.undo_delete_contour()
         if contour_to_restore is not None:
             self.drawing.draw_contour(contour_to_restore)
 
     def binariseImages(self):
-        image,contours = self.model.binariseImages(self.RLPath.get(), self.TLPath.get(),self.rlVar.get(), self.tlVar.get())
+        image,contours,self.width,self.height = self.model.binariseImages(self.RLPath.get(), self.TLPath.get(),self.rlVar.get(), self.tlVar.get())
 
         self.drawing.display_image(image)
         for contour in contours:
@@ -447,13 +476,13 @@ class Application:
         fileRL = self.RLPath.get()
         fileTL = self.TLPath.get()
         maskPath = self.MaskFolderLocation.get()
-
         self.model.write_mask_to_png(fileRL,fileTL,maskPath)
 
     def separate(self):
-        composite_contour_list, image_to_show, is_image_binary, pairs_list = self.model.separate()
-        self.drawing.plot_kvalues_on_grain_image(composite_contour_list, image_to_show, is_image_binary)
-        self.drawing.draw_breaklines(self.pairsList)
+        composite_contour_list, image_to_show, is_image_binary, pairs_list = self.model.separate(self.TLPath.get(), self.RLPath.get())
+        self.drawing.plot_kvalues_on_grain_image(composite_contour_list, image_to_show, is_image_binary,self.width, self.height)
+        for line in pairs_list:
+            self.drawing.draw_interactive_breakline(line)
 
     def create_spot_capture_dialog(self, event):
         thisSpot = event.widget.find_withtag('current')[0]
