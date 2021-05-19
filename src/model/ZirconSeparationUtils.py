@@ -119,7 +119,7 @@ def simplify(poly,inside, reduction_factor = 1):
 
     return newPoints
 
-def GetCoefficients(contour,has_parent, ORDER_FACTOR =0.2):
+def get_efd_parameters_for_simplified_contour(contour, has_parent, filter_fn, ORDER_FACTOR =0.2):
     #Takes an object of type CompositeContour. It uses the ComplexContour.original_points.
     #return: updated CompositeContour object
     #if has_parent ==True:
@@ -130,22 +130,36 @@ def GetCoefficients(contour,has_parent, ORDER_FACTOR =0.2):
     if len(contour)<50:
         ORDER_FACTOR= 1
 
-
     number_of_points = len(contour)
     order = int(number_of_points*ORDER_FACTOR)
     #reconstructed_points = simplify(contour, has_parent) ### for testing must remove
-    if order !=0:
-        coefficients = calcEFD(contour,order)
-        locus = calculate_locus(contour)
-        reconstructed_points = pyefd.reconstruct_contour(coefficients, locus, number_of_points+1).astype('int') #simplify (contour,has_parent)
-        keep_contour = True
-    else:
-        coefficients = None
-        locus = None
-        reconstructed_points = None
-        keep_contour = False
+    if order ==0:
+        return None
+    if filter_fn is not None and not filter_fn(contour):
+        return None
 
-    return coefficients,locus, reconstructed_points, keep_contour
+    coefficients = calcEFD(contour,order)
+    locus = calculate_locus(contour)
+    reconstructed_points = pyefd.reconstruct_contour(coefficients, locus, number_of_points + 1).astype('int')  # simplify (contour,has_parent)
+    reconstructed_points_without_duplicates = remove_duplicate_points(reconstructed_points)
+    if len(reconstructed_points_without_duplicates)<2:
+        return None
+
+    return coefficients,locus, reconstructed_points_without_duplicates
+
+
+def remove_duplicate_points(reconstructed_points):
+    nonduplicate_points = []
+    prev_x = None
+    prev_y = None
+    for x,y in reconstructed_points:
+        if x != prev_x or y != prev_y:
+            nonduplicate_points.append((x,y))
+        prev_x = x
+        prev_y = y
+
+    return nonduplicate_points
+
 
 def InsidePolygon(coord1, coord2, polygon):
     poly = Polygon(polygon)
@@ -523,7 +537,7 @@ def FindCurvatureMaxima(curvature_values,cumulative_distance,contour_points):
     k_maxima_y = []
     non_maxima_k = []
     k_cutoff = 80
-    test_plot_points=[]
+    #test_plot_points=[]
     curvature_absolute_values = [abs(value) for value in curvature_values]
     abs_percentile = np.percentile(curvature_absolute_values,k_cutoff)
     percentile = np.percentile(curvature_values,k_cutoff)
@@ -552,7 +566,7 @@ def FindCurvatureMaxima(curvature_values,cumulative_distance,contour_points):
                         k_maxima_values.append(thisK)  #get the k maxima
                         k_maxima_x.append(contour_points[i][0])  # get the x value associated with the k
                         k_maxima_y.append(contour_points[i][1])  # get the y value associated with the k
-                        test_plot_points.append([contour_points[i][0],contour_points[i][1]])
+                        #test_plot_points.append([contour_points[i][0],contour_points[i][1]])
                     else:
                         non_maxima_k.append(thisK)  # all k values that aren't maxima
                 elif thisK==prevK and prevK>prev2K:
@@ -561,7 +575,7 @@ def FindCurvatureMaxima(curvature_values,cumulative_distance,contour_points):
                         k_maxima_values.append(thisK)  #get the k maxima
                         k_maxima_x.append(contour_points[i][0])  # get the x value associated with the k
                         k_maxima_y.append(contour_points[i][1])  # get the y value associated with the k
-                        test_plot_points.append([contour_points[i][0],contour_points[i][1]])
+                        #test_plot_points.append([contour_points[i][0],contour_points[i][1]])
                     else:
                         non_maxima_k.append(thisK)  # all k values that aren't maxima
 

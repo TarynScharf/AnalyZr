@@ -207,9 +207,9 @@
                     "y": 1732.3636363636363
                 }
             ],
-            "RL_Path": "C:/Users/20023951/Documents/PhD/GSWA/Geochem_Interrogate/Inv1_Images/granodiorite/88411_spots/Cropped/88411_spots_p1_RL__WqO4ozqE.png",
-            "TL_Path": "C:/Users/20023951/Documents/PhD/GSWA/Geochem_Interrogate/Inv1_Images/granodiorite/88411_spots/Cropped/88411_spots_p1_TL_PnCztOBkT.png",
-            "Mask_Path": "C:/Users/20023951/Documents/PhD/GSWA/Geochem_Interrogate/Masks/22012021\\88411_spots_p1_RL__WqO4ozqE.png"
+            "RL_Path": "C:/Users/20023951/PycharmProjects/ZirconSeparation/test/images/88411_spots_p1_RL__WqO4ozqE.png",
+            "TL_Path": "C:/Users/20023951/PycharmProjects/ZirconSeparation/test/images/88411_spots_p1_TL_PnCztOBkT.png",
+            "Mask_Path": "C:/Users/20023951/PycharmProjects/ZirconSeparation/test/Mask\\88411_spots_p1_RL__WqO4ozqE.png"
         },
         {
             "id": "nKc4mtbIG",
@@ -270,37 +270,6 @@
                 {
                     "x": 0,
                     "y": 2312.396103896104
-                }
-            ]
-        },
-        {
-            "id": "3.1",
-            "type": "RECTANGLE",
-            "tags": [
-                "SPOT"
-            ],
-            "boundingBox": {
-                "height": 21.0,
-                "width": 25.0,
-                "left": 478.4983037079511,
-                "top": 270.23376623376623
-            },
-            "points": [
-                {
-                    "x": 478.4983037079511,
-                    "y": 270.23376623376623
-                },
-                {
-                    "x": 503.4983037079511,
-                    "y": 270.23376623376623
-                },
-                {
-                    "x": 503.4983037079511,
-                    "y": 291.23376623376623
-                },
-                {
-                    "x": 478.4983037079511,
-                    "y": 291.23376623376623
                 }
             ]
         },
