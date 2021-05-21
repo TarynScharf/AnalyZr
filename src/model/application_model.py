@@ -32,8 +32,12 @@ class Model():
         self.image_folder_path = None
         self.json_folder_path = None  # where json files are stored.
 
+        self.rl_path = None
+        self.tl_path = None
+        self.binarise_rl_image = None
+        self.binarise_tl_image = None
 
-        self.maskPath = ''
+        self.mask_path = None
         self.contours_by_group_tag = {}  # a list of all the polygon objects to turn into  binary masks
         self.deleted_contours = []  # in case of an undo
         self.Current_Image = 'TL'  # tracks which image type is displayed
@@ -91,9 +95,9 @@ class Model():
 
         elif 'extcont_' in group_tag:
             contour_coords = self.contours_by_group_tag[group_tag].paired_coordinates()
-            polygon = shapely.Polygon(contour_coords)  # create a shapely polygon
+            polygon = shapely.geometry.Polygon(contour_coords)  # create a shapely polygon
             representative_point = polygon.representative_point()  # using the shapely polygon, get a point inside the polygon
-            self.threshold = skimage.label(self.threshold, background=0, connectivity=None).astype('uint8')
+            self.threshold = skimage.measure.label(self.threshold, background=0, connectivity=None).astype('uint8')
             blob_label = self.threshold[int(representative_point.y),int(representative_point.x)]
             if int(blob_label)!=0:
                 self.threshold[self.threshold==blob_label]=0
@@ -156,31 +160,42 @@ class Model():
         self.all_contours[contour.unique_tag] = contour
         return contour
 
-    def SaveBreakChanges(self,RLPath, TLPath, new_boundary = None):
+    def SaveBreakChanges(self,new_boundary = None):
         updatedMask = self.convert_contours_to_mask_image(self.height, self.width, self.contours_by_group_tag.values())
 
-        if new_boundary != None: # if the user has digitised a new grain boundary manually
+        # if the user has digitised a new grain boundary manually, draw it on the mask image
+        if new_boundary != None:
             points = np.array(new_boundary.paired_coordinates(),'int32')
             updatedMask = cv2.fillPoly(updatedMask,[points], color=(255,255,255))
 
-
+        #draw breaklines on the image to divide touching grains
         for breakline in self.breaklines:
             updatedMask = cv2.line(updatedMask, (int(breakline.x0), int(breakline.y0)), (int(breakline.x1),int(breakline.y1)), (0,0,0),2)
         self.breaklines = []
 
-        self.threshold = updatedMask
-
+        #label each grain uniquely
         updatedMask[updatedMask > 0] = 255
         labelim = skimage.measure.label(updatedMask, background=0, connectivity=None)
         self.threshold = labelim.astype('uint8')
 
-        if TLPath != '' and self.Current_Image=='TL':
-            original_Image = cv2.imread(TLPath)
+        #display
+        if self.Current_Image=='TL':
+            if self.tl_path != '':
+                image_to_display = self.tl_image
+            elif self.rl_path != '':
+                image_to_display = self.rl_image
+            else:
+                image_to_display = self.threshold
 
-        elif RLPath != '' and self.Current_Image=='RL':
-            original_Image = cv2.imread(RLPath)
+        elif self.Current_Image=='RL':
+            if self.rl_path != '':
+                image_to_display = self.rl_image
+            elif self.tl_path != '':
+                image_to_display = self.tl_image
+            else:
+                image_to_display = self.threshold
 
-        image_pill = Image.fromarray(original_Image)
+        image_pill = Image.fromarray(image_to_display)
         self.img = ImageTk.PhotoImage(image=image_pill)
         contours = self.extract_contours_from_image('extcont')
 
@@ -305,18 +320,28 @@ class Model():
     def set_json_folder_path(self,path):
         self.json_folder_path.set(path)
 
-    def load_mask_from_file(self,path):
-        self.threshold = cv2.imread(path)[:, :, 0]
+    def load_mask_from_file(self, mask_path):
+        if mask_path == '':
+            raise ValueError('No mask image has been selected')
+
+        # the rl and tl variables must be set to none and repopulated from the file paths read from the json file
+        self.rl_path = None
+        self.tl_path = None
+        self.rl_image = None
+        self.tl_image = None
+
+        self.threshold = cv2.imread(mask_path)[:, :, 0]
         self.threshold[self.threshold > 0] = 255
-        jsonName = '_'.join(path.split('/')[-1].split('_')[:3]) + '.json'
+
+        jsonName = '_'.join(mask_path.split('/')[-1].split('_')[:3]) + '.json'
         sampleid = jsonName.split('_')[0]
-        if len(path.split('/')[-1].split('_')) > 2:
-            regionID = path.split('/')[-1].split('_')[-1].replace('.png', '')
+        if len(mask_path.split('/')[-1].split('_')) > 2:
+            regionID = mask_path.split('/')[-1].split('_')[-1].replace('.png', '')
         else:
             regionID = ""
 
         if self.json_folder_path is None:
-            return None
+            raise ValueError('No json folder path has been set')
 
         with open(os.path.join(self.json_folder_path, jsonName), errors='ignore') as jsonFile:
             data = json.load(jsonFile)
@@ -325,6 +350,10 @@ class Model():
         for region in data["regions"]:
             if region["id"] == regionID:
                 return region
+
+    def get_threshold_image(self):
+        threshold_image = Image.fromarray(self.threshold)
+        return threshold_image
 
     def load_current_mask(self):
         self.threshold = cv2.imread(self.currentMask)[:, :, 0]
@@ -341,7 +370,8 @@ class Model():
         missing_json_files = []
         for path, folders, files in os.walk(image_folder_path):
             for name in files:
-                if os.path.splitext(name)[1] == '.png':  # check for images
+                extension = os.path.splitext(name)[1]
+                if extension.lower() == '.png':  # check for images
                     has_images = True
                     json_file = os.path.splitext(name)[0] + '.json'
                     has_json = self.does_json_exist(os.path.join(json_folder_path, json_file))
@@ -476,15 +506,18 @@ class Model():
             connection.close()
             print('Sample already in DB: ', regionID)
 
-    def write_mask_to_png(self,fileRL,fileTL,maskPath):
+    def set_mask_path(self, mask_path):
+        self.mask_path = mask_path
+
+    def write_mask_to_png(self):
 
         self.threshold[self.threshold > 0] = 255
 
         jsonName = ''
         regionID = ''
 
-        if fileRL != '':
-            fileName = fileRL.split('/')[-1]
+        if self.rl_path != '':
+            fileName = self.rl_path.split('/')[-1]
             jsonName = '_'.join(fileName.split('_')[:3]) + '.json'
             t_regionID = fileName.split('_')
             regionID = '_'.join(t_regionID[4:]).replace('.png', '')
@@ -493,24 +526,23 @@ class Model():
             fileName = self.File_Location.get().split('/')[-1]
             jsonName = '_'.join(fileName.split('_')[:2])
 
-        maskPath = os.path.join(maskPath, fileName)
+        mask_image_path = os.path.join(self.mask_path, fileName)
         if self.json_folder_path is None or self.json_folder_path == '':
-            self.error_message_text = 'JSON file location has not been set'
-            self.open_error_message_popup_window()
-            return
+            raise ValueError('JSON file location has not been set')
+
         else:
             with open(os.path.join(self.json_folder_path, jsonName), errors='ignore') as jsonFile:
                 data = json.load(jsonFile)
             for region in data['regions']:
                 if region['id'] == regionID:
-                    region["RL_Path"] = fileRL
-                    region["TL_Path"] = fileTL
-                    region["Mask_Path"] = maskPath
+                    region["RL_Path"] = self.rl_path
+                    region["TL_Path"] = self.tl_path
+                    region["Mask_Path"] = mask_image_path
 
             with open(os.path.join(self.json_folder_path, jsonName), 'w', errors='ignore') as updatedFile:
                 json.dump(data, updatedFile, indent=4)
 
-        cv2.imwrite(maskPath, self.threshold)
+        cv2.imwrite(mask_image_path, self.threshold)
 
     def next_image(self):
         if self.current_image_index < len(self.jsonList)-1:
@@ -537,13 +569,13 @@ class Model():
         image_data = ImageData.fromJSONData(data,json_file_path)
         return image, image_data
 
-    def get_region_and_sample_id(self, mask_file_path,ProcessFolderFlag,RLPath):
+    def get_region_and_sample_id(self, mask_file_path,ProcessFolderFlag):
         if mask_file_path != '':  # if we're processing a single mask image
             fPath = mask_file_path
         elif ProcessFolderFlag == True:  # if we are processing an entire folder of masks
             fPath = self.currentMask
         else:  # if we are processing an image we have just binarised
-            fPath = RLPath
+            fPath = self.rl_path
 
         jsonName = '_'.join(fPath.split('/')[-1].split('_')[:3]) + '.json'
         sampleid = jsonName.split('_')[0]
@@ -558,7 +590,7 @@ class Model():
             self.width = self.threshold.shape[1]
             self.height = self.threshold.shape[0]
         image_remove = ZirconSeparationUtils.removeSmallObjects(self.threshold,15)  # remove small objects below a threshold size (max object size/15)
-        image_clear = ZirconSeparationUtils.clear_border(labels=image_remove, bgval=0,buffer_size=1)  # remove objects that touch the image boundary
+        image_clear = skimage.segmentation.clear_border(labels=image_remove, bgval=0,buffer_size=1)  # remove objects that touch the image boundary
         image_clear_uint8 = image_clear.astype('uint8')
 
         return image_clear_uint8
@@ -719,11 +751,11 @@ class Model():
 
         return measurements
 
-    def create_labeled_image(self,region_measurements, TLPath, RLPath):
-        if self.Current_Image == 'TL' and TLPath != '':
-            img_to_display = cv2.imread(TLPath)
-        elif self.Current_Image == 'RL' and RLPath != '':
-            img_to_display = cv2.imread(RLPath)
+    def create_labeled_image(self,region_measurements):
+        if self.Current_Image == 'TL' and self.tl_path != '':
+            img_to_display = self.tl_image
+        elif self.Current_Image == 'RL' and self.rl_path != '':
+            img_to_display = self.rl_image
         else:
             self.threshold[self.threshold > 0] = 255
             img_to_display = np.stack((self.threshold,) * 3, axis=-1)
@@ -738,12 +770,11 @@ class Model():
 
         return img_to_display
 
-    def MeasureShapes(self, mask_file_path,TLPath, RLPath,processFolderFlag):
-        self.jsonName = ''
-        sampleid,regionID,self.jsonName = self.get_region_and_sample_id(mask_file_path,processFolderFlag,RLPath)
+    def MeasureShapes(self, mask_file_path,processFolderFlag):
+        sampleid,regionID,self.jsonName = self.get_region_and_sample_id(mask_file_path,processFolderFlag)
         self.preprocess_image_for_measurement(mask_file_path)
 
-        json_file_path = self.json_folder_path.get()  # 'C:/Users/20023951/Documents/PhD/GSWA/Geochem_Interrogate/t2_inv1_files'
+        json_file_path = self.json_folder_path  # 'C:/Users/20023951/Documents/PhD/GSWA/Geochem_Interrogate/t2_inv1_files'
         self.contours_by_group_tag={}
 
         spotList, dupList, micPix, imageDimensions = self.read_spots_unwanted_scale_from_json(json_file_path,regionID)
@@ -752,7 +783,7 @@ class Model():
 
         region_measurements = self.create_measurement_table(sampleid,regionID,imageDimensions,micPix,mask_file_path)
 
-        labeled_image = self.create_labeled_image(region_measurements,TLPath, RLPath)
+        labeled_image = self.create_labeled_image(region_measurements)
 
         #for duplicate in dupList:
             #img_to_display = cv2.circle(img_to_display, (int(duplicate[0]), int(duplicate[1])), 1, (255, 255, 255), 1)
@@ -800,22 +831,18 @@ class Model():
         self.dfShapeRounded = dfShape.round(decimals=2)  # And I only want to see 2 decimal places
         print(self.dfShapeRounded) '''
 
-    def binariseImages(self,RLPath, TLPath,rlVar,tlVar):
+    def binariseImages(self):
         self.breaklines == []
         self.contours_by_group_tag = {}
         self.deleted_contours = []
-        fileRL = RLPath
-        fileTL = TLPath
 
-        if fileRL != '' and rlVar == 1:
-            # Read in the files
+        if self.binarise_rl_image == 1:
+            self.rl_image = cv2.imread(self.rl_path)
+            if self.rl_image is None:
+                raise ValueError('No reflected light image selected')
             self.Current_Image = 'RL'
-            img = cv2.imread(fileRL)
-            self.width = img.shape[1]
-            self.height = img.shape[0]
 
-            # Process RL image:
-            grayRL = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+            grayRL = cv2.cvtColor(self.rl_image, cv2.COLOR_BGR2GRAY)
             smoothImgRL1 = cv2.bilateralFilter(grayRL, 75, 15, 75)
             smoothImgRL2 = cv2.bilateralFilter(smoothImgRL1, 75, 15, 75)
             otsuImgRL = cv2.threshold(smoothImgRL2, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1]
@@ -823,15 +850,13 @@ class Model():
             fillRL_uint8 = fillRL.astype('uint8')
             fillRL_uint8[fillRL_uint8 > 0] = 255
 
-        if fileTL != '' and tlVar== 1:
-            # Read in the files
-            imgTL = cv2.imread(fileTL)
-            self.width = imgTL.shape[1]
-            self.height = imgTL.shape[0]
+        if self.binarise_tl_image == 1:
+            self.tl_image = cv2.imread(self.tl_path)
+            if self.tl_image is None:
+                raise ValueError('No transmitted light image selected')
             self.Current_Image = 'TL'
 
-            # Process TL image:
-            grayTL = cv2.cvtColor(imgTL, cv2.COLOR_BGR2GRAY)
+            grayTL = cv2.cvtColor(self.tl_image, cv2.COLOR_BGR2GRAY)
             smoothImgTL1 = cv2.bilateralFilter(grayTL, 75, 15, 75)
             smoothImgTL2 = cv2.bilateralFilter(smoothImgTL1, 75, 15, 75)
             otsuImgTL = cv2.threshold(smoothImgTL2, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1]
@@ -839,30 +864,26 @@ class Model():
             otsuInvTL_uint8 = otsuInvTL.astype('uint8')
             otsuInvTL_uint8[otsuInvTL_uint8 > 0] = 255
 
-        if fileRL != '' and fileTL != '' and rlVar == 1 and tlVar == 1:
-            # Add the images together:
+        if self.binarise_rl_image == 0 and self.binarise_tl_image == 0:
+            raise ValueError('Select image to binarise')
+
+        if self.binarise_rl_image == 1 and self.binarise_tl_image == 1:
             self.Current_Image = 'TL'
             self.threshold = cv2.add(otsuInvTL_uint8, fillRL_uint8)
-            imCopy = cv2.imread(fileTL)  # import image as RGB for plotting contours in colour
-        elif fileRL != '' and rlVar ==1 and tlVar ==0:
+
+        elif self.binarise_rl_image ==1 and self.binarise_tl_image ==0:
             self.Current_Image = 'RL'
             self.threshold = fillRL_uint8  # in some cases the tl and rl images are warped and can't fit ontop of  each other. I use the RL because of the spots captured on the RL image
-            imCopy = cv2.imread(fileRL)  # import image as RGB for plotting contours in colour
-        elif fileTL != '' and tlVar ==1  and rlVar ==0:
+
+        elif self.binarise_tl_image ==1  and self.binarise_rl_image ==0:
             self.Current_Image = 'TL'
             self.threshold = otsuInvTL_uint8  # in some cases the tl and rl images are warped and can't fit ontop of  each other. I use the RL because of the spots captured on the RL image
-            imCopy = cv2.imread(fileTL)
-        elif fileTL != '' and fileRL != '' and tlVar ==1  and rlVar ==0:
-            self.Current_Image = 'TL'
-            self.threshold = otsuInvTL_uint8  # in some cases the tl and rl images are warped and can't fit ontop of  each other. I use the RL because of the spots captured on the RL image
-            imCopy = cv2.imread(fileTL)
 
         # Once the image is binarised, get the contours
         self.erode_small_artifacts(self.threshold)
         self.width = self.threshold.shape[1]
         self.height = self.threshold.shape[0]
-        image_pill = Image.fromarray(imCopy)
-
+        image_pill = Image.fromarray(self.tl_image if self.binarise_tl_image else self.rl_image)
 
         def filter_polygon_by_area(contour):
             area = cv2.contourArea(contour, False)
@@ -891,6 +912,9 @@ class Model():
 
     def set_source_folder_paths(self, image_folder_path, json_folder_path):
         self.image_folder_path = image_folder_path
+        self.set_json_folder_path(json_folder_path)
+
+    def set_json_folder_path(self,json_folder_path):
         self.json_folder_path = json_folder_path
 
     def get_current_sample_index(self):
@@ -915,9 +939,9 @@ class Model():
             raise Exception('Spot number already captured for PDF: ' + str(self.currentSample))
 
     def get_current_image_contours(self):
-        return self.contours_by_group_tag
+        return list(self.contours_by_group_tag.values())
 
-    def separate(self,TLPath, RLPath):
+    def separate(self):
         def filter_polygon_by_area(contour):
             area = cv2.contourArea(contour, False)
             return area>=50
@@ -949,8 +973,6 @@ class Model():
                 continue
             composite_contour.coefficients, composite_contour.locus, composite_contour.reconstructed_points = get_coefficients_result
 
-
-
             composite_contour.curvature_values, composite_contour.cumulative_distance = ZirconSeparationUtils.calculateK(composite_contour.reconstructed_points, composite_contour.coefficients) #composite_contour.reconstructed_points
             curvature_maxima_length_positions, curvature_maxima_values, curvature_maxima_x, curvature_maxima_y, non_maxima_curvature = ZirconSeparationUtils.FindCurvatureMaxima(composite_contour.curvature_values,composite_contour.cumulative_distance,composite_contour.reconstructed_points)
             node_curvature_values, node_distance_values, node_x, node_y = ZirconSeparationUtils.IdentifyContactPoints(curvature_maxima_length_positions, curvature_maxima_values, curvature_maxima_x, curvature_maxima_y, non_maxima_curvature)
@@ -970,11 +992,11 @@ class Model():
 
         groups = ZirconSeparationUtils.FindNestedContours(hierarchy)
 
-        if TLPath != '':
-            image_to_show = cv2.imread(TLPath)
+        if self.tl_path != '':
+            image_to_show = self.tl_image
             is_image_binary = False
-        elif RLPath!='':
-            image_to_show = cv2.imread(RLPath)
+        elif self.rl_path:
+            image_to_show = self.rl_image
             is_image_binary = False
         else:
             image_to_show = self.threshold
@@ -999,4 +1021,10 @@ class Model():
                 self.breaklines.append(breakline)
 
         return composite_contour_list, image_to_show, is_image_binary, self.breaklines
+
+    def set_rl_tl_paths_and_usage(self,rl_path, tl_path,binarise_rl_image, binarise_tl_image):
+        self.rl_path = rl_path
+        self.tl_path = tl_path
+        self.binarise_rl_image = binarise_rl_image
+        self.binarise_tl_image = binarise_tl_image
 

@@ -178,7 +178,7 @@
             "Mask_Path": "C:/Users/20023951/Documents/PhD/GSWA/Geochem_Interrogate/Masks/22012021\\88411_spots_p1_RL_dDRzzd58w.png"
         },
         {
-            "id": "_WqO4ozqE",
+            "id": "WqO4ozqE",
             "type": "RECTANGLE",
             "tags": [
                 "RL"
@@ -207,9 +207,9 @@
                     "y": 1732.3636363636363
                 }
             ],
-            "RL_Path": "C:/Users/20023951/PycharmProjects/ZirconSeparation/test/images/88411_spots_p1_RL__WqO4ozqE.png",
+            "RL_Path": "C:/Users/20023951/PycharmProjects/ZirconSeparation/test/images/88411_spots_p1_RL_WqO4ozqE.png",
             "TL_Path": "C:/Users/20023951/PycharmProjects/ZirconSeparation/test/images/88411_spots_p1_TL_PnCztOBkT.png",
-            "Mask_Path": "C:/Users/20023951/PycharmProjects/ZirconSeparation/test/Mask\\88411_spots_p1_RL__WqO4ozqE.png"
+            "Mask_Path": "C:/Users/20023951/PycharmProjects/ZirconSeparation/test/Mask\\88411_spots_p1_RL_WqO4ozqE.png"
         },
         {
             "id": "nKc4mtbIG",

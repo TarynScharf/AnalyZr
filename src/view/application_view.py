@@ -9,6 +9,9 @@ import os
 from src.model.drawing_objects.breakline import Breakline
 from src.model.image_data import ImageData
 from src.view.application_drawing import Drawing
+from src.view.binarise_dialog import BinariseDialog
+from src.view.data_capture_dialog import DataCaptureDialog
+from src.view.segmentation_dialog import SegmentationDialog
 
 os.environ["OPENCV_IO_MAX_IMAGE_PIXELS"] = pow(2,40).__str__()
 import matplotlib
@@ -18,7 +21,11 @@ matplotlib.use('Agg')
 from src.model.ZirconSeparationUtils import *
 
 
-class Application:
+class DataCaptureWindow(object):
+    pass
+
+
+class View:
 
     def __init__(self, master, model):
         self.master = master
@@ -53,8 +60,8 @@ class Application:
         master.config(menu=self.mainMenu)
 
         self.binariseMenu = Menu(self.mainMenu, tearoff=0)
-        self.binariseMenu.add_command(label="Load json Files", command=lambda: self.Browse('json'))
-        self.binariseMenu.add_command(label="Image Segmentation Toolbox", command=self.create_image_segmentation_toolbox_dialog)
+        self.binariseMenu.add_command(label="Load json Files", command=lambda: self.set_json_folder_path('json',self.myFrame))
+        self.binariseMenu.add_command(label="Image Segmentation Toolbox", command=self.open_binarise_dialog)
         #self.binariseMenu.add_command(label="Grain Boundary Capture [p]", command=self.BoundaryDraw)
         #self.binariseMenu.add_command(label="Polygon Insert Point [i]", command=self.EditPolygon)
         #self.binariseMenu.add_command(label="Polygon Insert Point [m]", command=self.PointMove)
@@ -90,6 +97,7 @@ class Application:
         self.label.grid(column=1, row=0, padx=5, pady=10)
         self.width = None #width of displayed image
         self.height = None #height of displaed image
+        self.ProcessFolderFlag = False
 
         self.json_folder_path = tk.StringVar()
 
@@ -104,6 +112,10 @@ class Application:
         master.bind("i", lambda e: self.EditPolygon())
         master.bind("m", lambda e: self.drawing.PointMove())
         master.bind("l", lambda e: self.drawing.DrawScale())
+
+
+    def open_binarise_dialog(self):
+        binarise_dialog = BinariseDialog(self)
 
     def exception_hook(self, exception_type, value, tb) -> None:
         """
@@ -120,6 +132,9 @@ class Application:
         self.open_error_message_popup_window(error)
 
 
+    def save_mask(self, mask_path):
+        self.model.set_mask_path(mask_path)
+        self.SaveMask()
 
     def NextImage(self):
         self.model.next_image()
@@ -139,47 +154,37 @@ class Application:
     def display_image(self, image):
         self.drawing.display_image(image)
 
-    def Browse(self, case):
+    def set_json_folder_path(self,case,window):
+        json_path = self.Browse(case,window)
+        self.model.set_json_folder_path(json_path)
+
+    def Browse(self, case, window):
         if case == 'RL': #if browing for an RL image in the binarise menu
-            filename = filedialog.askopenfilename(filetypes=[("all files", "*.*")])
-            self.RLPath.set(filename)
-            self.RLTextBox.delete(0, END)
-            self.RLTextBox.insert(0, filename)
+            filename = filedialog.askopenfilename(parent = window, filetypes=[("all files", "*.*")])
+            return filename
+
         elif case == 'TL': #if browsing for a TL image in the binarise menu
-            filename = filedialog.askopenfilename(filetypes=[("all files", "*.*")])
-            self.TLPath.set(filename)
-            self.TLTextBox.delete(0, END)
-            self.TLTextBox.insert(0, filename)
+            filename = filedialog.askopenfilename(parent = window, filetypes=[("all files", "*.*")])
 
         elif case == 'Mask': #if browsing for a mask image in the binarise menu
             folderName = filedialog.askdirectory()
-            self.MaskFolderLocation.set(folderName)
-            self.MaskTextBox.delete(0, END)
-            self.MaskTextBox.insert(0, folderName)
+            return folderName
 
         elif case == 'Folder': #if browsing for a folder
-            folderName = filedialog.askdirectory()
-            self.Folder_Location.set(folderName)
-            self.Folder_TextBox.delete(0, END)
-            self.Folder_TextBox.insert(0, folderName)
+            folderName = filedialog.askdirectory(parent = window)
+            return folderName
+
         elif case == 'json':
-            json_folder_name = filedialog.askdirectory()
-            self.json_folder_location = json_folder_name
-            self.json_folder_path.set(json_folder_name)
+            json_folder_name = filedialog.askdirectory(parent = window)
+            return json_folder_name
+
         elif case == 'capture': #if browsing for a folder of images for spot capture
             filename = filedialog.askdirectory()
-            self.folderPath = filename
-            self.image_folder_path.set(filename)
-            if self.load_json_folder.get() == 0:
-                self.json_folder_path.set(self.image_folder_path.get())
+            return filename
 
         elif case == 'File':
-            filename = filedialog.askopenfilename(filetypes=[("all files", "*.*")])
-            self.File_Location.set(filename)
-            self.File_TextBox.delete(0, END)
-            self.File_TextBox.insert(0, filename)
-        else:
-            print('Browse error. No case')
+            filename = filedialog.askopenfilename(parent = window, filetypes=[("all files", "*.*")])
+            return filename
 
     def ok_cancel_create_json_files(self, list_of_json_files_to_create):
         self.ok_cancel_json_window = Toplevel(self.master)
@@ -200,14 +205,12 @@ class Application:
         for file_name in json_files_to_create:
             self.model.write_json_file(file_name)
 
-    def GetImageInfo(self):
+    def GetImageInfo(self,image_folder_path,json_folder_path):
         #Does 2 things:
         # Check for images in the folder, returns error message if there are none.
         #checks if each image has a corresponding json file. Offers to create the ones that are missing.
 
         self.jsonList = []
-        image_folder_path = self.image_folder_path.get()
-        json_folder_path = self.json_folder_path.get()
         if json_folder_path == '':
             json_folder_path = image_folder_path
 
@@ -238,71 +241,15 @@ class Application:
         self.errorLabel.grid(column=0, row=0)
 
     def create_data_capture_dialog(self):
-        self.browse_for_files_window = Toplevel(self.master)
-        self.browse_for_files_window.title("Select Images for Spot Capture")
-        self.browse_for_files_window.minsize(400,100)
+        DataCaptureDialog(self)
 
-        #browse for images
-        self.image_folder_Label = Label(self.browse_for_files_window, text="Image Folder")
-        self.image_folder_Label.grid(column=0, row=0)
-        self.image_folder_path = tk.StringVar()
-        self.image_folder_path.set('')
-        self.image_folder_text_box = Entry(self.browse_for_files_window, width=150, textvariable=self.image_folder_path)
-        self.image_folder_text_box.grid(column=1, row=0)
-        self.browse_for_image_folder = Button(self.browse_for_files_window, text="...", width=5, command=lambda: self.Browse('capture'))
-        self.browse_for_image_folder.grid(column=2, row=0, padx=2, pady=5)
-
-
-
-        #browse for json files
-        self.json_folder_Label = Label(self.browse_for_files_window, text="Json Folder")
-        self.json_folder_Label.config(state=DISABLED)
-        self.json_folder_Label.grid(column=0, row=2)
-        self.json_folder_path = tk.StringVar()
-        self.json_folder_path.set('')
-
-        self.json_folder_text_box = Entry(self.browse_for_files_window, width=150, textvariable=self.json_folder_path)
-        self.json_folder_text_box.config(state=DISABLED)
-        self.json_folder_text_box.grid(column=1, row=2)
-
-        self.browse_for_json_folder = Button(self.browse_for_files_window, text="...", width=5,command=lambda: self.Browse('json'))
-        self.browse_for_json_folder.config(state=DISABLED)
-        self.browse_for_json_folder.grid(column=2, row=2, padx=2, pady=5)
-
-        self.create_json_var = IntVar()
-        self.create_json_files_check_button = Checkbutton(self.browse_for_files_window,text='Generate json files if missing',variable=self.create_json_var)
-        self.create_json_files_check_button.grid(column=0, row=3, padx=2, pady=5)
-
-        self.load_json_folder = IntVar()
-        self.load_json_folder_check_button = Checkbutton(self.browse_for_files_window, text='load jsons separately',variable=self.load_json_folder,command=lambda: self.activate_browse_for_json_folder())
-        self.load_json_folder_check_button.grid(column=1, row=3, padx=2, pady=5)
-
-        self.ok_load_files_for_capture = Button(self.browse_for_files_window, text="OK", width=5,command=lambda: self.load_files())
-        self.ok_load_files_for_capture.grid(column=0, row=4, padx=2, pady=5)
-
-        self.cancel_load_files_for_capture = Button(self.browse_for_files_window, text="Cancel", width=8,command=lambda: self.close_window(self.browse_for_files_window))
-        self.cancel_load_files_for_capture.grid(column=1, row=4, padx=2, pady=5)
 
     def close_window(self,window):
             window.destroy()
 
-    def load_files(self):
-        self.GetImageInfo()
-        self.close_window(self.browse_for_files_window)
+    def load_files(self,image_folder_path,json_folder_path):
+        self.GetImageInfo(image_folder_path,json_folder_path)
         self.update_data_capture_display()
-
-    def activate_browse_for_json_folder(self):
-        if self.load_json_folder.get()==1:
-            state = NORMAL
-            path = ""
-        elif self.load_json_folder.get()==0:
-            state = DISABLED
-            path = self.image_folder_path.get()
-
-        self.json_folder_Label.config(state=state)
-        self.json_folder_text_box.config(state=state)
-        self.browse_for_json_folder.config(state=state)
-        self.model.set_json_folder_path(path)
 
     def create_image_segmentation_toolbox_dialog(self):
         self.browseImagesWindow = Toplevel(self.master)
@@ -323,7 +270,7 @@ class Application:
         self.rlVar = IntVar()
         self.rlCheckButton = Checkbutton(self.browseImagesWindow, text= 'Binarise  RL',variable=self.rlVar)
         self.rlCheckButton.grid(column=4, row=0, padx=2, pady=5)
-        self.Display_RL_Image_Button = Button(self.browseImagesWindow, text="Display", width=8, command=lambda: self.display_parent_image(0))
+        self.Display_RL_Image_Button = Button(self.browseImagesWindow, text="Display", width=8, command=lambda: self.display_parent_image(0,self.RLPath.get(), self.TLPath.get()))
         self.Display_RL_Image_Button.grid(column=5, row=0, padx=2, pady=5)
 
         self.TL_Label = Label(self.browseImagesWindow, text="TL Image")
@@ -339,7 +286,7 @@ class Application:
         self.tlCheckButton = Checkbutton(self.browseImagesWindow, text='Binarise  TL', variable=self.tlVar)
         self.tlCheckButton.grid(column=4, row=1, padx=2, pady=5)
         self.Display_TL_Image_Button = Button(self.browseImagesWindow, text="Display", width=8,
-                                              command=lambda: self.display_parent_image(1))
+                                              command=lambda: self.display_parent_image(1,self.RLPath.get(), self.TLPath.get()))
         self.Display_TL_Image_Button.grid(column=5, row=1, padx=2, pady=5)
 
         self.Mask_Label = Label(self.browseImagesWindow, text="Mask Save Location")
@@ -384,7 +331,7 @@ class Application:
         self.breakLine.grid(column=0, row=7, padx=2, pady=5)
         self.saveChanges = Button(self.browseImagesWindow, text="Save Changes", command=self.SaveBreakChanges)
         self.saveChanges.grid(column=0, row=8, padx=2, pady=5)
-        self.measureShapes = Button(self.browseImagesWindow, text="Measure Shapes",command=self.start_measure_shapes)
+        self.measureShapes = Button(self.browseImagesWindow, text="Measure Shapes",command=self.view.start_measure_shapes())
         self.measureShapes.grid(column=0, row=9, padx=2, pady=5)
         self.pushDB = Button(self.browseImagesWindow, text="Push to DB",command=self.model.push_shape_measurements_to_database)
         self.pushDB.grid(column=0, row=10, padx=2, pady=5)
@@ -400,10 +347,7 @@ class Application:
         self.write_to_csv_button.grid(column=0, row=14, padx=2, pady=5)
 
     def SaveBreakChanges(self,new_contour=None):
-        RLPath = self.RLPath.get()
-        TLPath = self.TLPath.get()
-        image, contours =self.model.SaveBreakChanges(RLPath, TLPath,new_contour)
-
+        image, contours =self.model.SaveBreakChanges(new_contour)
         self.display_image(image)
         for contour in contours:
             self.drawing.draw_contour(contour)
@@ -413,16 +357,20 @@ class Application:
         if contour_to_restore is not None:
             self.drawing.draw_contour(contour_to_restore)
 
-    def binariseImages(self):
-        image,contours,self.width,self.height = self.model.binariseImages(self.RLPath.get(), self.TLPath.get(),self.rlVar.get(), self.tlVar.get())
+    def binariseImages(self,RLPath, TLPath, rlVar, tlVar):
+        self.model.set_rl_tl_paths_and_usage(RLPath, TLPath,rlVar, tlVar)
+        try:
+            image,contours,self.width,self.height = self.model.binariseImages()
+        except ValueError as e:
+            self.open_error_message_popup_window(str(e))
+            return
 
         self.drawing.display_image(image)
         for contour in contours:
             self.drawing.draw_contour(contour)
 
-    def start_measure_shapes(self):
-        mask_path = self.MaskFolderLocation.get()
-        self.model.MeasureShapes(mask_path)
+    def start_measure_shapes(self,mask_file_path):
+        self.model.MeasureShapes(mask_file_path, False)
 
     def ProcessFolder(self):
         self.ProcessFolderFlag = True
@@ -430,7 +378,7 @@ class Application:
             for name in files:
                 self.currentMask = self.Folder_Location.get()+'/'+name #the file path of the current mask we're processing
                 self.DisplayMask()
-                self.model.MeasureShapes(self.currentMask,self.TLPath.get(),self.RLPath.get(),True)
+                self.model.MeasureShapes(self.currentMask,True)
                 self.model.push_shape_measurements_to_database()
                 self.currentMask = None
             self.ProcessFolderFlag = False
@@ -439,47 +387,35 @@ class Application:
     def display_spots_during_measurement(self, spotList):
         self.drawing.display_spots_during_measurement(spotList)
 
-    def DisplayMask(self):
-        path = self.File_Location.get()
-        rl_path = ''
-        tl_path = ''
-        if path != '':
-            region = self.model.load_mask_from_file(path)
-            if region == None:
-                error_message_text = "JSON file location has not been defined"
-                self.open_error_message_popup_window(error_message_text)
-                return
+    def DisplayMask(self, mask_file_path):
+        try:
+            region = self.model.load_mask_from_file(mask_file_path)
+        except Exception as e:
+            self.open_error_message_popup_window(str(e))
+            return
 
-            rl_path = region["RL_Path"] if "RL_Path" in region else self.RLPath.get()
-            tl_path = region["TL_Path"] if "TL_Path" in region else self.TLPath.get()
-            mask_path = region["Mask_Path"].split('\\')[0] if "Mask_Path" in region else self.MaskFolderLocation.get()
+        self.rl_path = region["RL_Path"] if "RL_Path" in region else self.RLPath.get()
+        self.tl_path = region["TL_Path"] if "TL_Path" in region else self.TLPath.get()
+        self.mask_path = region["Mask_Path"].split('\\')[0] if "Mask_Path" in region else self.MaskFolderLocation.get()
 
-            self.RLTextBox.delete(0, END)
-            self.RLTextBox.insert(0, rl_path)
-            self.TLTextBox.delete(0, END)
-            self.TLTextBox.insert(0, tl_path)
-            self.MaskTextBox.delete(0, END)
-            self.MaskTextBox.insert(0, mask_path)
+       # if self.ProcessFolderFlag == True:
+       #     self.model.load_current_mask()
 
-        elif self.ProcessFolderFlag == True:
-            self.model.load_current_mask()
-
-        image_pill = Image.fromarray(self.threshold)
+        image_pill = self.model.get_threshold_image()
         self.drawing.display_image(image_pill)
-        self.model.extract_contours_from_image()
+        self.model.extract_contours_from_image('contour')
+
+        return self.rl_path, self.tl_path, self.mask_path
 
     def write_to_csv(self):
         filepath = filedialog.asksaveasfilename(defaultextension = '.csv', filetypes = [("CSV Files","*.csv")], title="Save As")
         self.model.write_to_csv(filepath)
 
     def SaveMask(self):
-        fileRL = self.RLPath.get()
-        fileTL = self.TLPath.get()
-        maskPath = self.MaskFolderLocation.get()
-        self.model.write_mask_to_png(fileRL,fileTL,maskPath)
+        self.model.write_mask_to_png()
 
     def separate(self):
-        composite_contour_list, image_to_show, is_image_binary, pairs_list = self.model.separate(self.TLPath.get(), self.RLPath.get())
+        composite_contour_list, image_to_show, is_image_binary, pairs_list = self.model.separate()
         self.drawing.plot_kvalues_on_grain_image(composite_contour_list, image_to_show, is_image_binary,self.width, self.height)
         for line in pairs_list:
             self.drawing.draw_interactive_breakline(line)
@@ -509,12 +445,11 @@ class Application:
         self.spotCaptureWindow.bind('<Return>', lambda e: self.Save())
         self.saveSpotNo.grid(column=0, row=1, pady=5)
 
-    def display_parent_image(self, image_to_display):
+    def display_parent_image(self, image_to_display,fileRL,fileTL):
         #This is for optionally loading either the TL or RL image
         image_pill=None
         if image_to_display == 0:
             self.Current_Image = 'RL'
-            fileRL = self.RLPath.get()
             if fileRL == '':
                 error_message_text = "No reflected light image has been selected"
                 self.open_error_message_popup_window(error_message_text)
@@ -525,7 +460,6 @@ class Application:
             image_pill = Image.fromarray(img)
         if image_to_display == 1:
             self.Current_Image = 'TL'
-            fileTL = self.TLPath.get()
             if fileTL == '':
                 error_message_text = "No transmitted light image has been selected"
                 self.open_error_message_popup_window(error_message_text)
