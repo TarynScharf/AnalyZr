@@ -2,6 +2,9 @@ import tkinter as tk
 from tkinter import *
 from tkinter.ttk import *
 
+from src.model.image_type import ImageType
+
+
 class DataCaptureDialog():
     def __init__(self, view):
         self.view = view
@@ -25,7 +28,7 @@ class DataCaptureDialog():
         self.image_folder_path.set('')
 
         # browse for images
-        self.image_folder_Label = Label(self.browse_for_files_window, text="Image Folder")
+        self.image_folder_Label = Label(self.browse_for_files_window, text="Data capture image folder")
         self.image_folder_Label.grid(column=0, row=0,sticky = 'w')
 
         self.image_folder_text_box = Entry(self.browse_for_files_window, width=150, textvariable=self.image_folder_path)
@@ -34,8 +37,15 @@ class DataCaptureDialog():
         self.browse_for_image_folder = Button(self.browse_for_files_window, text="...", width=5, command=lambda: self.Browse('capture', self.browse_for_files_window))
         self.browse_for_image_folder.grid(column=6, row=0, padx=2, pady=5,sticky = 'w')
 
+        self.select_image_type_label = Label(self.browse_for_files_window, text="Data capture from")
+        self.select_image_type_label.grid(column=0, row=1, sticky='w')
+
+        image_types = [type.value for type in ImageType]
+        self.image_type_combobox = Combobox(self.browse_for_files_window, values=image_types)
+        self.image_type_combobox.grid(column=1, row=1, padx=2, pady=5, sticky='w')
+
         # browse for json files
-        self.load_json_folder_check_button = Checkbutton(self.browse_for_files_window, text='load jsons separately', variable=self.load_json_folder, command=lambda: self.activate_browse_for_json_folder())
+        self.load_json_folder_check_button = Checkbutton(self.browse_for_files_window, text='Load jsons separately', variable=self.load_json_folder, command=lambda: self.activate_browse_for_json_folder())
         self.load_json_folder_check_button.grid(column=0, columnspan=2, row=2, padx=2, pady=5, sticky='w')
 
         self.json_folder_Label = Label(self.browse_for_files_window, text="Json Folder")
@@ -87,5 +97,8 @@ class DataCaptureDialog():
         self.view.model.set_json_folder_path(path)
 
     def load_files(self):
-        self.view.load_files(self.image_folder_path.get(),self.json_folder_path.get())
+        image_folder = self.image_folder_path.get()
+        json_folder = self.json_folder_path.get()
+        data_capture_image_type = ImageType(self.image_type_combobox.get())
+        self.view.load_files(image_folder,json_folder,data_capture_image_type)
         self.browse_for_files_window.destroy()

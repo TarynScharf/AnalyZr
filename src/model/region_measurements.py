@@ -7,7 +7,6 @@ class RegionMeasurement():
         image_id,
         grain_number,
         grain_centroid,
-        grainspot,
         area,
         equivalent_diameter,
         perimeter,
@@ -25,7 +24,7 @@ class RegionMeasurement():
         self.image_id = image_id # unique code coming from VOTT, per image
         self.grain_number = grain_number
         self.grain_centroid =grain_centroid # centroid of grain
-        self.grainspot = grainspot
+        self.grainspot = ''
         self.area= area
         self.equivalent_diameter = equivalent_diameter
         self.perimeter = perimeter
@@ -43,3 +42,52 @@ class RegionMeasurement():
         self.roundness = (4 * area) / (math.pi * (major_axis_length ** 2)),
         self.compactness = (math.sqrt((4 / math.pi) * area) / major_axis_length),
         self.aspectRatio = major_axis_length / minor_axis_length
+
+    def as_list(self):
+        return [self.sampleid,
+                self.image_id,
+                self.grain_number,
+                self.grain_centroid,
+                self.grainspot,
+                self.area,
+                self.equivalent_diameter,
+                self.perimeter,
+                self.minor_axis_length,
+                self.major_axis_length,
+                self.solidity,
+                self.convex_area,
+                self.formFactor,
+                self.roundness,
+                self.compactness,
+                self.aspectRatio,
+                self.minFeret,
+                self.maxFeret,
+                self.contour,
+                self.image_dimensions,
+                self.mask_image
+                ]
+
+    @staticmethod
+    def get_headers():
+        return ['sampleid',
+                'image_id',
+                'grain_number',
+                'grain_centroid',
+                'grain_spots',
+                'area',
+                'equivalent_diameter',
+                'perimeter',
+                'minor_axis_length',
+                'major_axis_length',
+                'solidity',
+                'convex_area',
+                'formFactor',
+                'roundness',
+                'compactness',
+                'aspectRatio',
+                'minFeret',
+                'maxFeret',
+                'contour',
+                'image_dimensions',
+                'mask_image'
+                ]

@@ -17,12 +17,16 @@ from PIL import ImageTk
 from PIL import Image
 from scipy import ndimage
 
-from src.model import ZirconSeparationUtils, zircon_measurement_utils
+from src.model import ZirconSeparationUtils, zircon_measurement_utils, FileUtils
 from src.model.composite_contour import CompositeContour
 from src.model.drawing_objects.breakline import Breakline
 from src.model.drawing_objects.contour import Contour
-from src.model.drawing_objects.rectangle import RectangleType
+from src.model.drawing_objects.rectangle import RectangleType, Rectangle
+from src.model.drawing_objects.scale import Scale
+from src.model.drawing_objects.spot import Spot
 from src.model.image_data import ImageData
+from src.model.image_type import ImageType
+from src.model.json_data import JsonData
 from src.model.region_measurements import RegionMeasurement
 
 
@@ -37,10 +41,12 @@ class Model():
         self.binarise_rl_image = None
         self.binarise_tl_image = None
 
+        self.Current_Image = None
+
         self.mask_path = None
         self.contours_by_group_tag = {}  # a list of all the polygon objects to turn into  binary masks
         self.deleted_contours = []  # in case of an undo
-        self.Current_Image = 'TL'  # tracks which image type is displayed
+        #self.Current_Image = 'TL'  # tracks which image type is displayed
         self.width = 0  # used to set image dimensions on canvas, and in saved images. Ensures saved images have the same dimensions as input images. Important for relating spots to images, spatially.
         self.height = 0  # used to set image dimensions on canvas, and in saved images. Ensures saved images have the same dimensions as input images. Important for relating spots to images, spatially.
         self.breaklines = []
@@ -50,7 +56,7 @@ class Model():
         self.currentSpotNumber = tk.StringVar()
         self.image_iterator_current = None
         self.spotPointCount = 0
-
+        self.spots_in_measured_image = None
         self.text_label = ''  # label for duplicate grains and spot scales
         self.count = 0  # Used to put id's onto break  lines
 
@@ -155,7 +161,6 @@ class Model():
         self.uniqueTag = None
         self.groupTag = None
 
-
     def add_new_contour(self, contour):
         self.all_contours[contour.unique_tag] = contour
         return contour
@@ -178,29 +183,12 @@ class Model():
         labelim = skimage.measure.label(updatedMask, background=0, connectivity=None)
         self.threshold = labelim.astype('uint8')
 
-        #display
-        if self.Current_Image=='TL':
-            if self.tl_path != '':
-                image_to_display = self.tl_image
-            elif self.rl_path != '':
-                image_to_display = self.rl_image
-            else:
-                image_to_display = self.threshold
-
-        elif self.Current_Image=='RL':
-            if self.rl_path != '':
-                image_to_display = self.rl_image
-            elif self.tl_path != '':
-                image_to_display = self.tl_image
-            else:
-                image_to_display = self.threshold
-
+        image_to_display = self.Current_Image
         image_pill = Image.fromarray(image_to_display)
         self.img = ImageTk.PhotoImage(image=image_pill)
         contours = self.extract_contours_from_image('extcont')
 
         return image_pill, contours
-
 
     def extract_contours_from_image(self,prefix,filter_fn = None):
         # paint the contours on
@@ -223,43 +211,32 @@ class Model():
 
         return list(self.contours_by_group_tag.values())
 
-
-    def update_spot_in_json_file(self,spotID, x0,y0):
-        fileLocation = self.json_folder_path.get()
+    def update_spot_in_json_file(self,spot):
+        fileLocation = self.json_folder_path
+        if self.mask_path:
+            file_path = self.mask_path
+        elif self.rl_path:
+            file_path = self.rl_path
+        elif self.tl_path:
+            file_path = self.tl_path
+        t_regionID = file_path.split('/')[-1].split('_')
+        regionID = '_'.join(t_regionID[4:]).replace('.png', '')
 
         for path, folder, files in os.walk(fileLocation):
             for name in files:
-                if name == self.jsonName:  # find the json file that relates to the pdf page (image) under consideration
-                    with open(os.path.join(fileLocation, self.jsonName), errors='ignore') as jsonFile:
+                if name == self.json_file_name:  # find the json file that relates to the pdf page (image) under consideration
+                    with open(os.path.join(fileLocation, self.json_file_name), errors='ignore') as jsonFile:
                         data = json.load(jsonFile)
+
+                    region_top, region_left, _, _ = self.get_region_dimensions_from_json(data, regionID)
                     for region in data['regions']:
-                        t_regionID = self.File_Location.get().split('/')[-1].split('_')
-                        regionID = '_'.join(t_regionID[4:]).replace('.png', '')
-                        if region['id'] == regionID:
-                            imageTop = region['boundingBox']['top']  # find out the starting point (top left) of the photo under consideration
-                            imageLeft = region['boundingBox']['left']
-                            imageWidth = region['boundingBox']['width']
-                            imageHeight = region['boundingBox']['height']
-                        if region['id'] == spotID and region['type'] == 'POINT':
-                            x = x0 + imageLeft
-                            y = y0 + imageTop
+                        if region['id'] == spot.group_tag and region['type'] == 'POINT':
+                            x = spot.x0 + region_left
+                            y = spot.y0 + region_top
                             newPoints = [{"x": x, "y": y}]
                             region["points"] = newPoints
-                        elif region['id'] == spotID and region['type'] == 'RECTANGLE':
-                            left_x = x0 - (region['boundingBox']['width'] / 2) + imageLeft
-                            right_x = x0 + (region['boundingBox']['width'] / 2) + imageLeft
-                            top_y = y0 - (region['boundingBox']['height'] / 2) + imageTop
-                            bottom_y = y0 + (region['boundingBox']['height'] / 2) + imageTop
-                            newPoints = [{"x": left_x, "y": top_y}, {"x": right_x, "y": top_y}, {"x": right_x, "y": bottom_y}, {"x": left_x, "y": bottom_y}]
-                            region["boundingBox"] = {
-                                "height": region["boundingBox"]['height'],
-                                "width": region["boundingBox"]['width'],
-                                "left": left_x,
-                                "top": top_y
-                            }
-                            region["points"] = newPoints
 
-                    with open(os.path.join(fileLocation, self.jsonName), 'w', errors='ignore') as updatedFile:
+                    with open(os.path.join(fileLocation, self.json_file_name), 'w', errors='ignore') as updatedFile:
                         json.dump(data, updatedFile, indent=4)
 
     def save_drawing_object_to_json(self, object):
@@ -325,6 +302,7 @@ class Model():
             raise ValueError('No mask image has been selected')
 
         # the rl and tl variables must be set to none and repopulated from the file paths read from the json file
+        #else old values will still be in memory if the json is not found
         self.rl_path = None
         self.tl_path = None
         self.rl_image = None
@@ -346,10 +324,15 @@ class Model():
         with open(os.path.join(self.json_folder_path, jsonName), errors='ignore') as jsonFile:
             data = json.load(jsonFile)
 
-        # if regionID in data["regions"]:
+        this_region = None
         for region in data["regions"]:
             if region["id"] == regionID:
-                return region
+                this_region = region
+                break
+        self.rl_path = this_region["RL_Path"] if "RL_Path" in this_region else ''
+        self.tl_path = this_region["TL_Path"] if "TL_Path" in this_region else ''
+        self.mask_path = this_region["Mask_Path"] if "Mask_Path" in region else ''
+        self.set_current_image(ImageType.MASK)
 
     def get_threshold_image(self):
         threshold_image = Image.fromarray(self.threshold)
@@ -365,45 +348,41 @@ class Model():
         self.contours_by_group_tag[contour_to_restore.group_tag] = contour_to_restore
         return contour_to_restore
 
-    def check_for_images_and_jsons(self, image_folder_path, json_folder_path):
+    def check_for_images_and_jsons(self, image_folder_path, json_folder_path, data_capture_image_type):
         has_images = False
         missing_json_files = []
         for path, folders, files in os.walk(image_folder_path):
             for name in files:
                 extension = os.path.splitext(name)[1]
-                if extension.lower() == '.png':  # check for images
+                # check for images
+                if extension.lower() == '.png' and self.is_file_name_of_image_type(name,data_capture_image_type):
                     has_images = True
                     json_file = os.path.splitext(name)[0] + '.json'
                     has_json = self.does_json_exist(os.path.join(json_folder_path, json_file))
                     if not has_json:
-                        missing_json_files.append(name)
+                        json_path = os.path.join(path,name)
+                        missing_json_files.append(json_path)
         return has_images, missing_json_files
 
     def does_json_exist(self, json_file):
         return os.path.exists(json_file)
 
+    def is_file_name_of_image_type(self, file_name:str, image_type):
+        pattern = image_type.file_pattern()
+        if image_type == ImageType.COLLAGE:
+            return True
+        return file_name.endswith("_" + pattern) or ("_" + pattern + "_") in file_name
 
-    def write_json_file(self,file):
-        file_extension = os.path.splitext(file)[-1]
-        path  = os.path.join(self.json_folder_path.get(), file)
-        img = cv2.imread(path)[:,:,0]
-        json_name = os.path.splitext(file)[0]+".json"
-        data = {"asset": {
-                    "format": file_extension,
-                    "id": hash(file),
-                    "name": file,
-                    "path": path,
-                    "size": {
-                            "width":img.shape[1],
-                            "height":img.shape[0]
-                            },
+    def create_new_json_file(self, data_capture_image_path, image_type):
+        image = cv2.imread(data_capture_image_path)[:,:,0]
+        image_width = image.shape[1]
+        image_height = image.shape[0]
 
-                    },
-                "regions":[]
-               }
-
-        with open(os.path.join(self.json_folder_path.get(), json_name), 'w', errors='ignore') as new_json:
-            json.dump(data, new_json, indent=4)
+        data = JsonData(data_capture_image_path,image_type,image_width, image_height)
+        # If we're creating a new json path then the data-capture image is not a collage
+        # and therefore we add a single region to the json file that encompasses the whole image.
+        data.add_first_image_region()
+        data.save_all()
 
     def read_sampleID_and_spots_from_json(self):
         # Get a list of unique sample ID's and the spots associated with them.
@@ -463,7 +442,7 @@ class Model():
             r'DRIVER={Microsoft Access Driver (*.mdb, *.accdb)};DBQ=C:/Users/20023951/Documents/PhD/GSWA/GSWA_2019Geochron/DATABASES/Test.mdb')  # Set up a connection string
         colArray = 'sampleid, image_id, grain_number,grain_centroid, grain_spots, area, equivalent_diameter, perimeter, minor_axis_length,major_axis_length, solidity, convex_area, formFactor,roundness, compactness, aspectRatio, minFeret, maxFeret, contour, image_dimensions,mask_image'
         cursor = connection.cursor()
-        if self.jsonName == '':
+        if self.json_file_name == '':
             self.error_message_text = 'Shapes have not been measured'
             self.open_error_message_popup_window()
             return
@@ -509,40 +488,9 @@ class Model():
     def set_mask_path(self, mask_path):
         self.mask_path = mask_path
 
-    def write_mask_to_png(self):
-
+    def write_mask_to_png(self, mask_file_path):
         self.threshold[self.threshold > 0] = 255
-
-        jsonName = ''
-        regionID = ''
-
-        if self.rl_path != '':
-            fileName = self.rl_path.split('/')[-1]
-            jsonName = '_'.join(fileName.split('_')[:3]) + '.json'
-            t_regionID = fileName.split('_')
-            regionID = '_'.join(t_regionID[4:]).replace('.png', '')
-
-        elif self.File_Location.get() != '':
-            fileName = self.File_Location.get().split('/')[-1]
-            jsonName = '_'.join(fileName.split('_')[:2])
-
-        mask_image_path = os.path.join(self.mask_path, fileName)
-        if self.json_folder_path is None or self.json_folder_path == '':
-            raise ValueError('JSON file location has not been set')
-
-        else:
-            with open(os.path.join(self.json_folder_path, jsonName), errors='ignore') as jsonFile:
-                data = json.load(jsonFile)
-            for region in data['regions']:
-                if region['id'] == regionID:
-                    region["RL_Path"] = self.rl_path
-                    region["TL_Path"] = self.tl_path
-                    region["Mask_Path"] = mask_image_path
-
-            with open(os.path.join(self.json_folder_path, jsonName), 'w', errors='ignore') as updatedFile:
-                json.dump(data, updatedFile, indent=4)
-
-        cv2.imwrite(mask_image_path, self.threshold)
+        cv2.imwrite(mask_file_path, self.threshold)
 
     def next_image(self):
         if self.current_image_index < len(self.jsonList)-1:
@@ -563,29 +511,11 @@ class Model():
         image = Image.open(fileName)
         json_file_path = os.path.join(self.json_folder_path, jf)
 
-        with open(json_file_path, errors='ignore') as jsonFile:
-            data = json.load(jsonFile)
-
-        image_data = ImageData.fromJSONData(data,json_file_path)
+        image_data = JsonData.load_all(json_file_path)
         return image, image_data
 
-    def get_region_and_sample_id(self, mask_file_path,ProcessFolderFlag):
-        if mask_file_path != '':  # if we're processing a single mask image
-            fPath = mask_file_path
-        elif ProcessFolderFlag == True:  # if we are processing an entire folder of masks
-            fPath = self.currentMask
-        else:  # if we are processing an image we have just binarised
-            fPath = self.rl_path
-
-        jsonName = '_'.join(fPath.split('/')[-1].split('_')[:3]) + '.json'
-        sampleid = jsonName.split('_')[0]
-        t_regionID = fPath.split('/')[-1].split('_')
-        regionID = '_'.join(t_regionID[4:]).replace('.png', '')
-
-        return sampleid, regionID,jsonName
-
     def preprocess_image_for_measurement(self, mask_file_path):
-        if mask_file_path != '' and self.threshold is None:
+        if mask_file_path != '':
             self.threshold = cv2.imread(mask_file_path)[:, :, 0]
             self.width = self.threshold.shape[1]
             self.height = self.threshold.shape[0]
@@ -595,146 +525,112 @@ class Model():
 
         return image_clear_uint8
 
-    def read_spots_unwanted_scale_from_json(self,json_file_path,regionID):
-        imageDimensions = ''  # this will record the XY dimensions of the cropped image, so that the contours can be redrawn on a blank image in the event that the cropped image  file is ever lost
-        spot = False
+    def read_spots_unwanted_scale_from_json(self,json_data, json_file_path,regionID):
         spotList = []
-        dupList = []
-        for path, folder, files in os.walk(json_file_path):
-            for name in files:
-                if name == self.jsonName:  # find the json file that relates to the pdf page (image) under consideration
-                    scaleFlag = False
-                    spotList = []
-                    dupList = []
-                    with open(os.path.join(json_file_path, self.jsonName), errors='ignore') as jsonFile:
-                        data = json.load(jsonFile)
+        regions_to_remove_from_mask_image = []
+        region_object = json_data.get_image_region(regionID)
 
-                    for region in data['regions']:
-                        if regionID == "":  # if the photo  in question does not comprise subregions (i.e. not a photo collage)
-                            imageTop = 0  # find out the starting point (top left) of the photo under consideration
-                            imageLeft = 0
-                            imageWidth = data["asset"]["size"]["width"]
-                            imageHeight = data["asset"]["size"]['height']
-                            imageDimensions = str(imageTop) + ',' + str(imageLeft) + ',' + str(
-                                imageTop + imageWidth) + ',' + str(
-                                imageLeft + imageHeight)  # record those photo dimensions for use later
-                        elif region['id'] == regionID:  # if the photo in question is a subregion of the original image
-                            imageTop = region['boundingBox'][
-                                'top']  # find out the starting point (top left) of the photo under consideration
-                            imageLeft = region['boundingBox']['left']
-                            imageWidth = region['boundingBox']['width']
-                            imageHeight = region['boundingBox']['height']
-                            imageDimensions = str(imageTop) + ',' + str(imageLeft) + ',' + str(
-                                imageTop + region['boundingBox']['width']) + ',' + str(
-                                imageLeft + region['boundingBox'][
-                                    'height'])  # record those photo dimensions for use later
-                        if region['tags'][0] == 'SPOT' and region[
-                            'type'] == 'POINT':  # this will look for all spots in the pdf page, regardless of whether or not they are actually on the cropped image under consideration
-                            spot = True
-                            x = region['points'][0]['x']
-                            y = region['points'][0]['y']
-                            spotID = region['id']
-                            newX = x - imageLeft
-                            newY = y - imageTop
-                            # print('spotID: ', spotID, ' | x: ', x, ' | y: ', y, ' | newX: ', newX, ' | newY: ', newY)
-                            if x >= imageLeft:
-                                if x <= imageLeft + imageWidth:
-                                    if y >= imageTop:
-                                        if y <= imageTop + imageHeight:
-                                            spotList.append([newX, newY, spotID])
-                        if region[
-                            'type'] == 'SCALE':  # this will look for all scales (there should only be 1) on the pdf page, regardless of whether or not they are actually on the cropped image under consideration
-                            delta_x = abs(region['points'][0]['x'] - region['points'][1][
-                                'x'])  # diff in x between THIS node and other nodes
-                            delta_y = abs(region['points'][0]['y'] - region['points'][1][
-                                'y'])  # diff in y between THIS node and other nodes
-                            distance = math.sqrt(
-                                (delta_x ** 2) + (delta_y ** 2))  # pixel distance, equivalent to 100 microns
-                            scaleFlag = True
-                            micPix = 100 / distance
-                        if region['type'] == 'RECTANGLE' and region['tags'][
-                            0] == 'SPOT':  # this will look for all rectanglular scales on the pdf page, regardless of whether or not they are actually on the cropped image under consideration
-                            spot = True
-                            x = region['boundingBox']['left'] + (region['boundingBox']['width'] / 2)
-                            y = region['boundingBox']['top'] + (region['boundingBox']['height'] / 2)
-                            spotID = region['id']
-                            newX = x - imageLeft
-                            newY = y - imageTop
-                            if x >= imageLeft:
-                                if x <= imageLeft + imageWidth:
-                                    if y >= imageTop:
-                                        if y <= imageTop + imageHeight:
-                                            spotList.append([newX, newY, spotID])
-                            # ('rectangle scale detected')
-                            scaleFlag = True
-                            micPix = 30 / ZirconSeparationUtils.getScale(name, path, 'SPOT')
-                            # print('micron per pixel: ', micPix)
-                        if region['type'] == 'RECTANGLE' and region['tags'][0] == RectangleType.DUPLICATE:
-                            x = region['boundingBox']['left'] + (region['boundingBox']['width'] / 2)
-                            y = region['boundingBox']['top'] + (region['boundingBox']['height'] / 2)
-                            newX = x - imageLeft
-                            newY = y - imageTop
-                            if x >= imageLeft:
-                                if x <= imageLeft + imageWidth:
-                                    if y >= imageTop:
-                                        if y <= imageTop + imageHeight:
-                                            dupList.append([newX, newY])
-                    if spot == False:
-                        print('No spot in image')
+        region_top = region_object.y0
+        region_bottom = region_object.y1
+        region_left = region_object.x0
+        region_right = region_object.x1
 
-                    if scaleFlag == False or micPix < 0:
-                        scale = ZirconSeparationUtils.getScale(name, path, 'SPOT')
-                        if scale == -1:
-                            self.error_message_text = 'No scale available in sample'
-                            self.open_error_message_popup_window()
-                            return
-                        else:
-                            micPix = 30 / scale
+        #This gets written to the output so that someone can regenerate the
+        #contour image at a later point, if the original mask is lost
+        region_dimension_string = f'{region_top},{region_left},{region_right},{region_bottom}'
 
-        return spotList,dupList,micPix,imageDimensions
+        for spot in json_data.spots:
+            # this will look for all spots in the pdf page, regardless of whether or not they are actually on the cropped image under consideration
+            if spot.x0 >= region_left and spot.x0 <= region_right and spot.y0 >= region_top and spot.y0 <= region_bottom:
+                # If the image is a crop from a larger image (e.g. A4 collage of photos)
+                # and the spots were captured on the larger image
+                # the display coordinages on the cropped image must be calculated
+                spot.x0 -= region_left
+                spot.y0 -= region_top
+                spotList.append(spot)
+
+        for unwanted_object in json_data.unwanted_objects:
+            centroid_x, centroid_y = unwanted_object.get_centroid()
+            if centroid_x >= region_left and centroid_x <= region_right and centroid_y >= region_top and centroid_y <= region_bottom:
+                    unwanted_object.translate_coordinates(-region_left, -region_top)
+                    regions_to_remove_from_mask_image.append(unwanted_object)
+
+        if json_data.scale is not None:
+            scale_in_real_world_distance = 100 / json_data.scale.get_length()
+        elif len(json_data.spot_areas)>0:
+            average_scale = ZirconSeparationUtils.getScale(json_file_path, 'SPOT')
+            if average_scale is not None:
+                scale_in_real_world_distance = 30 / average_scale
+            else:
+                raise ValueError('No scale available in sample')
+        else:
+            raise ValueError('No scale available in sample')
+
+        return spotList,regions_to_remove_from_mask_image,scale_in_real_world_distance,region_dimension_string
+
+    def get_region_dimensions_from_json(self, data, regionID):
+        if regionID == "":  # if the photo  in question does not comprise subregions (i.e. not a photo collage)
+            imageTop = 0  # find out the starting point (top left) of the photo under consideration
+            imageLeft = 0
+            imageWidth = data["asset"]["size"]["width"]
+            imageHeight = data["asset"]["size"]['height']
+            return imageTop, imageLeft, imageWidth, imageHeight
+
+        for region in data['regions']:
+            if region['id'] == regionID:  # if the photo in question is a subregion of the original image
+                # find out the starting point (top left) of the photo under consideration
+                imageTop = region['boundingBox']['top']
+                imageLeft = region['boundingBox']['left']
+                imageWidth = region['boundingBox']['width']
+                imageHeight = region['boundingBox']['height']
+                return imageTop, imageLeft, imageWidth, imageHeight
+
+        return None
 
     def remove_unwanted_objects_from_binary_image(self,objects_to_remove):
         for unwanted_object in objects_to_remove:
-            label = self.threshold[int(unwanted_object[1]), int(unwanted_object[0])]
+            x,y = unwanted_object.get_centroid()
+            label = self.threshold[int(x), int(y)]
             if label != 0:
                 self.threshold[self.threshold == label] = 0
 
-    def find_spots_in_region(self,label,contoursFinal,spotList):
+    def find_spots_in_region(self,label,spotList,contoursFinal):
         spots = []
         for contour in contoursFinal:
-            polygon = shapely.Polygon(np.squeeze(contour))  # create a shapely polygon
+            polygon = shapely.geometry.Polygon(np.squeeze(contour))  # create a shapely polygon
             representative_point = polygon.representative_point()  # using the shapely polygon, get a point inside the polygon
             # get the region label at the representative point
             region_label = self.threshold[int(representative_point.y), int(representative_point.x)]
             if region_label == label:  # is this boundary around the region in question?
                 boundary = matplotlib.path.Path(np.squeeze(contour), closed=True)
                 for spot in spotList:
-                    spotInside = boundary.contains_point([spot[0], spot[1]])
+                    spotInside = boundary.contains_point([spot.x0, spot.y0])
                     if spotInside == True:
                         # a grain may have more than 1 spot associated with it. Find all spots associated with the grain
-                        spots.append(spot[2])
+                        spots.append(spot)
 
-                return ','.join(spots),contour
-        return '',None
+                return spots,contour
+        return spots,None
 
-    def create_measurement_table(self,sampleid,regionID,imageDimensions,micPix, mask_file_path):
+    def create_measurement_table(self,sampleid,regionID,imageDimensions,micPix, mask_file_path,all_spots):
         self.contours_by_group_tag = {}
         contoursFinal, hierarchyFinal = cv2.findContours(self.threshold, cv2.RETR_TREE,
                                                          cv2.CHAIN_APPROX_SIMPLE)  # cv2.CHAIN_APPROX_SIMPLE, cv2.RETR_EXTERNAL
-        props = skimage.regionprops(self.threshold)
+        props = skimage.measure.regionprops(self.threshold,)
 
         measurements = []
 
         for x in range(0, len(props)):
             # Convex image is good enough because it'll give us the max points and min edges for maxFeret and minFeret
             maxFeret, minFeret = zircon_measurement_utils.feret_diameter(props[x].convex_image)
-            spot_list,contour = self.find_spots_in_region(props[x].label)
+            spots_in_region,contour = self.find_spots_in_region(props[x].label,all_spots,contoursFinal)
+
+
             measurement = RegionMeasurement(
                     sampleid = sampleid,
                     image_id = regionID,
                     grain_number = props[x].label,
-                    centroid = props[x].centroid,
-                    grainspot = spot_list,
+                    grain_centroid = props[x].centroid,
                     area = props[x].area * (micPix ** 2),
                     equivalent_diameter = props[x].equivalent_diameter * micPix,
                     perimeter = props[x].perimeter * micPix,
@@ -747,89 +643,53 @@ class Model():
                     contour = contour,
                     image_dimensions =imageDimensions,
                     mask_image =mask_file_path)
-            measurements.append(measurement)
+            if len(spots_in_region)==0:
+                measurements.append(measurement)
+            else:
+                for spot in spots_in_region:
+                    spot_measurement = measurement.copy()
+                    spot_measurement.grainspot = spot.group_tag
+                    measurements.append(spot_measurement)
 
         return measurements
 
     def create_labeled_image(self,region_measurements):
-        if self.Current_Image == 'TL' and self.tl_path != '':
-            img_to_display = self.tl_image
-        elif self.Current_Image == 'RL' and self.rl_path != '':
-            img_to_display = self.rl_image
-        else:
-            self.threshold[self.threshold > 0] = 255
-            img_to_display = np.stack((self.threshold,) * 3, axis=-1)
+        image_to_display = self.Current_Image.copy()
 
         # cv2.imwrite('C:/Users/20023951/Documents/PhD/Reporting/Paper1_ZirconSeparationUtility/CaseStudy/CaseStudy_MaduraShelf/mask_img.jpg', img_to_display)
         for measurement in region_measurements:
             # img_to_display = cv2.circle(img_to_display, (int(centroid_List[i][1]), int(centroid_List[i][0])), 3, (0, 0, 255), 2)
             grain_centroid = measurement.grain_centroid
-            cv2.putText(img_to_display, str(measurement.grain_number),
+            cv2.putText(image_to_display, str(measurement.grain_number),
                         (int(grain_centroid[1] - 2), int(grain_centroid[0] - 2)), cv2.FONT_HERSHEY_DUPLEX, 0.3,
                         (0, 0, 255))
 
-        return img_to_display
+        return image_to_display
 
-    def MeasureShapes(self, mask_file_path,processFolderFlag):
-        sampleid,regionID,self.jsonName = self.get_region_and_sample_id(mask_file_path,processFolderFlag)
-        self.preprocess_image_for_measurement(mask_file_path)
+    def measure_shapes(self, mask_path, processFolderFlag):
+        if self.json_folder_path is None:
+            raise ValueError('No json folder path selected')
 
-        json_file_path = self.json_folder_path  # 'C:/Users/20023951/Documents/PhD/GSWA/Geochem_Interrogate/t2_inv1_files'
+        json_file_path,region_id,sample_id = self.get_json_path_and_region_id_and_sample_id_for_measurement(mask_path)
+        data = JsonData.load_all(json_file_path)
+
+        self.spots_in_measured_image = None
         self.contours_by_group_tag={}
 
-        spotList, dupList, micPix, imageDimensions = self.read_spots_unwanted_scale_from_json(json_file_path,regionID)
+        self.preprocess_image_for_measurement(mask_path)
 
-        self.remove_unwanted_objects_from_binary_image(dupList)
+        spotList, regions_to_remove_from_mask_image, scale_in_real_world_units, imageDimensions = self.read_spots_unwanted_scale_from_json(data,json_file_path,region_id)
+        self.spots_in_measured_image = spotList
+        self.remove_unwanted_objects_from_binary_image(regions_to_remove_from_mask_image)
 
-        region_measurements = self.create_measurement_table(sampleid,regionID,imageDimensions,micPix,mask_file_path)
+        region_measurements = self.create_measurement_table(sample_id,region_id,imageDimensions,scale_in_real_world_units,mask_path,spotList)
 
         labeled_image = self.create_labeled_image(region_measurements)
 
-        #for duplicate in dupList:
-            #img_to_display = cv2.circle(img_to_display, (int(duplicate[0]), int(duplicate[1])), 1, (255, 255, 255), 1)
-            #cv2.putText(img_to_display, 'Duplicate', (int(duplicate[0]) + 5, int(duplicate[1]) + 5), cv2.FONT_HERSHEY_DUPLEX,0.5, (255, 255, 255))
+        image_to_display = Image.fromarray(labeled_image)
+        contours = self.extract_contours_from_image("extcont")
 
-        #cv2.imwrite('C:/Users/20023951/Documents/PhD/Reporting/Paper1_ZirconSeparationUtility/CaseStudy/CaseStudy_MaduraShelf/labeled_mask.jpg',img_to_display)
-
-        image_pill = Image.fromarray(labeled_image)
-        self.view.display_image(image_pill)
-        self.extract_contours_from_image("extcont")
-        self.view.display_spots_during_measurement(spotList)
-
-        self.display_measurement_table(region_measurements)
-
-    def display_measurement_table(self,region_measurements):
-        '''
-        data = {'sampleid': sampleid_List,
-                'image_id': regionid_List,
-                'grain_number': label_List,
-                'grain_centroid': centroid_List,
-                'grainspot': spots_per_grain_List,
-                'area': area_List,
-                'equivalent_diameter': equivalent_diameter_List,
-                'perimeter': perimeter_List,
-                'minor_axis_length': minor_axis_length_List,
-                'major_axis_length': major_axis_length_List,
-                'solidity': solidity_List,
-                'convex_area': convex_area_List,
-                'formFactor': formFactor_List,
-                'roundness': roundness_List,
-                'compactness': compactness_List,
-                'aspectRatio': aspectRatio_List,
-                'minFeret': minFeret_List,
-                'maxFeret': maxFeret_List,
-                'contour': contour_List,
-                'image_dimensions': imDimensions_List,
-                'mask_image': maskImage_List
-                }
-        # Show me the table!
-        pd.set_option('display.max_rows', None)
-        pd.set_option('display.max_columns', None)
-        pd.set_option('display.width', None)
-        pd.set_option('display.max_colwidth', None)
-        dfShape = pd.DataFrame(data)
-        self.dfShapeRounded = dfShape.round(decimals=2)  # And I only want to see 2 decimal places
-        print(self.dfShapeRounded) '''
+        return image_to_display, contours, spotList,region_measurements
 
     def binariseImages(self):
         self.breaklines == []
@@ -840,7 +700,7 @@ class Model():
             self.rl_image = cv2.imread(self.rl_path)
             if self.rl_image is None:
                 raise ValueError('No reflected light image selected')
-            self.Current_Image = 'RL'
+            self.Current_Image = self.rl_image
 
             grayRL = cv2.cvtColor(self.rl_image, cv2.COLOR_BGR2GRAY)
             smoothImgRL1 = cv2.bilateralFilter(grayRL, 75, 15, 75)
@@ -854,7 +714,7 @@ class Model():
             self.tl_image = cv2.imread(self.tl_path)
             if self.tl_image is None:
                 raise ValueError('No transmitted light image selected')
-            self.Current_Image = 'TL'
+            self.Current_Image = self.tl_image
 
             grayTL = cv2.cvtColor(self.tl_image, cv2.COLOR_BGR2GRAY)
             smoothImgTL1 = cv2.bilateralFilter(grayTL, 75, 15, 75)
@@ -867,16 +727,13 @@ class Model():
         if self.binarise_rl_image == 0 and self.binarise_tl_image == 0:
             raise ValueError('Select image to binarise')
 
-        if self.binarise_rl_image == 1 and self.binarise_tl_image == 1:
-            self.Current_Image = 'TL'
+        elif self.binarise_rl_image == 1 and self.binarise_tl_image == 1:
             self.threshold = cv2.add(otsuInvTL_uint8, fillRL_uint8)
 
         elif self.binarise_rl_image ==1 and self.binarise_tl_image ==0:
-            self.Current_Image = 'RL'
             self.threshold = fillRL_uint8  # in some cases the tl and rl images are warped and can't fit ontop of  each other. I use the RL because of the spots captured on the RL image
 
         elif self.binarise_tl_image ==1  and self.binarise_rl_image ==0:
-            self.Current_Image = 'TL'
             self.threshold = otsuInvTL_uint8  # in some cases the tl and rl images are warped and can't fit ontop of  each other. I use the RL because of the spots captured on the RL image
 
         # Once the image is binarised, get the contours
@@ -1028,3 +885,42 @@ class Model():
         self.binarise_rl_image = binarise_rl_image
         self.binarise_tl_image = binarise_tl_image
 
+    def set_current_image(self,image_type):
+        if image_type == ImageType.TL:
+            self.Current_Image = self.tl_image
+        elif image_type == ImageType.RL:
+            self.Current_Image = self.rl_image
+        elif image_type == ImageType.MASK:
+            image = self.threshold.copy()
+            image[image > 0] = 255
+            self.Current_Image = np.stack((image,) * 3, axis=-1)
+        else:
+            raise Exception('Unknown image type '+str(image_type))
+        return  Image.fromarray(self.Current_Image)
+
+    def find_spot_in_measured_image_by_unique_tag(self, unique_tag):
+        for spot in self.spots_in_measured_image:
+            if spot.unique_tag == unique_tag:
+                return spot
+        return None
+
+    def get_json_path_and_region_id_and_sample_id_for_measurement(self, mask_path):
+        if mask_path != '':
+            image_type = ImageType.MASK
+            path = mask_path
+        elif self.rl_path:
+            image_type = ImageType.RL
+            path = self.rl_path
+        elif self.tl_path:
+            image_type = ImageType.TL
+            path= self.tl_path
+        else:
+            raise ValueError('No binarisation images found')
+
+        json_file_name = JsonData.get_json_file_name_from_path(image_type, path)
+        region_id = JsonData.get_region_id_from_file_path(image_type,path)
+        json_file_path = os.path.join(self.json_folder_path,json_file_name)
+
+        sample_id = JsonData.get_sample_id_from_file_path(path)
+
+        return json_file_path, region_id,sample_id
