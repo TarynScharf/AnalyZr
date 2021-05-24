@@ -1,0 +1,19 @@
+from enum import Enum
+
+
+class ImageType(Enum):
+    TL = 'Transmitted light'
+    RL = 'Reflected light'
+    MASK = 'Mask'
+    COLLAGE = 'Collage'
+
+
+    def file_pattern(self):
+        if self == ImageType.TL:
+            return "TL"
+        if self == ImageType.RL:
+            return "RL"
+        if self == ImageType.COLLAGE:
+            return ""
+        if self == ImageType.MASK:
+            return "mask"

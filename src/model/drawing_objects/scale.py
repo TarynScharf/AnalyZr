@@ -1,3 +1,5 @@
+import math
+
 from src.model.drawing_objects.drawing_object import DrawingObject
 
 
@@ -8,7 +10,7 @@ class Scale(DrawingObject):
         self.y0 = min(y0,y1)
         self.x1 = max(x0,x1)
         self.y1 = max(y0,y1)
-        self.real_world_distance = 30
+        self.real_world_distance = 100
 
     def type(self):
         return "SCALE"
@@ -32,10 +34,16 @@ class Scale(DrawingObject):
         left = self.x0
         right = self.x1
 
-        newRegion = {"id": self.unique_tag, "type": "SCALE", "tags": ["SCALE"],
+        newRegion = {"id": self.group_tag, "type": "SCALE", "tags": ["SCALE"],
                      "boundingBox": {"height": height, "width": width, "left": left, "top": top},
                      "points": [{"x": self.x0, "y": self.y0},
                                 {"x": self.x1, "y": self.y1}]}
 
         return newRegion
+
+    def get_length(self):
+        delta_x = abs(self.x0-self.x1)
+        delta_y = abs(self.y0-self.y1)
+        distance = math.hypot(delta_x, delta_y)
+        return distance
 

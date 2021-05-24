@@ -9,8 +9,8 @@ import os
 from src.model.drawing_objects.breakline import Breakline
 from src.model.image_data import ImageData
 from src.view.application_drawing import Drawing
-from src.view.binarise_dialog import BinariseDialog
 from src.view.data_capture_dialog import DataCaptureDialog
+from src.view.measurement_table_dialog import MeasurementDialog
 from src.view.segmentation_dialog import SegmentationDialog
 
 os.environ["OPENCV_IO_MAX_IMAGE_PIXELS"] = pow(2,40).__str__()
@@ -38,7 +38,7 @@ class View:
 
         self.myFrame = tk.Frame(master, width=1600, height=3000)
         self.myFrame.pack(expand=True, fill='both')
-        self.drawing=Drawing(self.myFrame, self.model, self)
+        self.drawing:Drawing=Drawing(self.myFrame, self.model, self)
 
         self.mainMenu = Menu(self.master)
         self.fileMenu = Menu(self.mainMenu, tearoff=0)
@@ -61,7 +61,7 @@ class View:
 
         self.binariseMenu = Menu(self.mainMenu, tearoff=0)
         self.binariseMenu.add_command(label="Load json Files", command=lambda: self.set_json_folder_path('json',self.myFrame))
-        self.binariseMenu.add_command(label="Image Segmentation Toolbox", command=self.open_binarise_dialog)
+        self.binariseMenu.add_command(label="Image Segmentation Toolbox", command=self.open_segmentation_toolbox_dialog)
         #self.binariseMenu.add_command(label="Grain Boundary Capture [p]", command=self.BoundaryDraw)
         #self.binariseMenu.add_command(label="Polygon Insert Point [i]", command=self.EditPolygon)
         #self.binariseMenu.add_command(label="Polygon Insert Point [m]", command=self.PointMove)
@@ -114,8 +114,8 @@ class View:
         master.bind("l", lambda e: self.drawing.DrawScale())
 
 
-    def open_binarise_dialog(self):
-        binarise_dialog = BinariseDialog(self)
+    def open_segmentation_toolbox_dialog(self):
+        SegmentationDialog(self)
 
     def exception_hook(self, exception_type, value, tb) -> None:
         """
@@ -132,10 +132,6 @@ class View:
         self.open_error_message_popup_window(error)
 
 
-    def save_mask(self, mask_path):
-        self.model.set_mask_path(mask_path)
-        self.SaveMask()
-
     def NextImage(self):
         self.model.next_image()
         self.update_data_capture_display()
@@ -145,14 +141,14 @@ class View:
         self.update_data_capture_display()
 
     def update_data_capture_display(self):
-        image, image_data = self.model.get_current_image_for_data_capture()
-        self.label['text'] = image_data.get_image_name() + '  | Sample ' + str(
+        image, json_data = self.model.get_current_image_for_data_capture()
+        self.label['text'] = json_data.get_data_capture_image_name() + '  | Sample ' + str(
             self.model.get_current_sample_index() + 1) + ' of ' + str(self.model.get_sample_count())
-        self.drawing.display_image(image)
-        self.drawing.draw_image_data(image_data)
+        self.drawing.clear_canvas_and_display_image(image)
+        self.drawing.draw_image_data(json_data)
 
     def display_image(self, image):
-        self.drawing.display_image(image)
+        self.drawing.clear_canvas_and_display_image(image)
 
     def set_json_folder_path(self,case,window):
         json_path = self.Browse(case,window)
@@ -200,12 +196,12 @@ class View:
         self.cancel_create_jsons = Button(self.ok_cancel_json_window, text="Cancel", width=8,command=lambda: self.close_window(self.ok_cancel_json_window))
         self.ok_create_jsons.grid(column=2, row=1, padx=2, pady=5)
 
-    def close_popup_window_and_create_jsons(self,window, json_files_to_create):
+    def close_popup_window_and_create_jsons(self, window, json_file_paths):
         self.close_window(window)
-        for file_name in json_files_to_create:
-            self.model.write_json_file(file_name)
+        for file_name in json_file_paths:
+            self.model.create_new_json_file(file_name)
 
-    def GetImageInfo(self,image_folder_path,json_folder_path):
+    def get_image_info_for_data_capture(self, image_folder_path, json_folder_path, data_capture_image_type):
         #Does 2 things:
         # Check for images in the folder, returns error message if there are none.
         #checks if each image has a corresponding json file. Offers to create the ones that are missing.
@@ -214,7 +210,7 @@ class View:
         if json_folder_path == '':
             json_folder_path = image_folder_path
 
-        has_images,missing_json_files = self.model.check_for_images_and_jsons(image_folder_path,json_folder_path)
+        has_images, missing_json_files = self.model.check_for_images_and_jsons(image_folder_path, json_folder_path, data_capture_image_type)
 
         if has_images == False:
             error_message_text = "The folder contains no images for data capture."
@@ -226,7 +222,8 @@ class View:
         if missing_json_files:
             if self.create_json_var.get() == 1:
                 for file in missing_json_files:
-                    self.model.write_json_file(file)
+
+                    self.model.create_new_json_file(file)
             else:
                 self.ok_cancel_create_json_files(missing_json_files)
 
@@ -247,104 +244,10 @@ class View:
     def close_window(self,window):
             window.destroy()
 
-    def load_files(self,image_folder_path,json_folder_path):
-        self.GetImageInfo(image_folder_path,json_folder_path)
+    def load_files(self,image_folder_path,json_folder_path,image_type):
+        self.get_image_info_for_data_capture(image_folder_path, json_folder_path,image_type)
         self.update_data_capture_display()
 
-    def create_image_segmentation_toolbox_dialog(self):
-        self.browseImagesWindow = Toplevel(self.master)
-        self.browseImagesWindow.title("Image Segmentation Toolbox")
-        self.browseImagesWindow.minsize(400, 100)
-        self.browseImagesWindow.attributes('-topmost', True)
-
-        self.RL_Label = Label(self.browseImagesWindow, text="RL Image")
-        self.RL_Label.grid(column=0, row=0)
-        self.RLPath = tk.StringVar()
-        self.RLPath.set('')
-        #self.RLPath.set('/home/matthew/Code/ZirconSeparation/test/images/88411_spots_p1_RL__WqO4ozqE.png')
-        self.RLPath.set('C:/Users/20023951/PycharmProjects/ZirconSeparation/test/images/88411_spots_p1_RL__WqO4ozqE.png')
-        self.RLTextBox = Entry(self.browseImagesWindow, width=150, textvariable=self.RLPath)
-        self.RLTextBox.grid(column=1, row=0)
-        self.browseRL = Button(self.browseImagesWindow, text="...", width=5, command=lambda: self.Browse('RL'))
-        self.browseRL.grid(column=3, row=0, padx=2, pady=5)
-        self.rlVar = IntVar()
-        self.rlCheckButton = Checkbutton(self.browseImagesWindow, text= 'Binarise  RL',variable=self.rlVar)
-        self.rlCheckButton.grid(column=4, row=0, padx=2, pady=5)
-        self.Display_RL_Image_Button = Button(self.browseImagesWindow, text="Display", width=8, command=lambda: self.display_parent_image(0,self.RLPath.get(), self.TLPath.get()))
-        self.Display_RL_Image_Button.grid(column=5, row=0, padx=2, pady=5)
-
-        self.TL_Label = Label(self.browseImagesWindow, text="TL Image")
-        self.TL_Label.grid(column=0, row=1)
-        self.TLPath = tk.StringVar()
-        self.TLPath.set('')
-        self.TLPath.set('C:/Users/20023951/PycharmProjects/ZirconSeparation/test/images/88411_spots_p1_TL_PnCztOBkT.png')
-        self.TLTextBox = Entry(self.browseImagesWindow, width=150, textvariable=self.TLPath)
-        self.TLTextBox.grid(column=1, row=1)
-        self.browseTL = Button(self.browseImagesWindow, text="...", width=5, command=lambda: self.Browse('TL'))
-        self.browseTL.grid(column=3, row=1, padx=2, pady=5)
-        self.tlVar = IntVar()
-        self.tlCheckButton = Checkbutton(self.browseImagesWindow, text='Binarise  TL', variable=self.tlVar)
-        self.tlCheckButton.grid(column=4, row=1, padx=2, pady=5)
-        self.Display_TL_Image_Button = Button(self.browseImagesWindow, text="Display", width=8,
-                                              command=lambda: self.display_parent_image(1,self.RLPath.get(), self.TLPath.get()))
-        self.Display_TL_Image_Button.grid(column=5, row=1, padx=2, pady=5)
-
-        self.Mask_Label = Label(self.browseImagesWindow, text="Mask Save Location")
-        self.Mask_Label.grid(column=0, row=2)
-        self.MaskFolderLocation = tk.StringVar()
-        self.MaskFolderLocation.set('')
-        self.MaskTextBox = Entry(self.browseImagesWindow, width=100, textvariable=self.MaskFolderLocation)
-        self.MaskTextBox.grid(column=1, row=2)
-        self.browseMask = Button(self.browseImagesWindow, text="...",width = 5, command=lambda: self.Browse('Mask'))
-        self.browseMask.grid(column=3, row=2, padx=2, pady=5)
-        self.saveMask = Button(self.browseImagesWindow, text="Save Mask", command=lambda: self.SaveMask())
-        self.saveMask.grid(column=4, row=2, padx=2, pady=5)
-
-        self.Process_Image = Label(self.browseImagesWindow, text="Process Mask Image")
-        self.Process_Image.grid(column=0, row=3)
-        self.File_Location = tk.StringVar()
-        self.File_Location.set('')
-        self.File_TextBox = Entry(self.browseImagesWindow, width=100, textvariable=self.File_Location)
-        self.File_TextBox.grid(column=1, row=3)
-        self.Browse_File = Button(self.browseImagesWindow, text="...", width=5, command=lambda: self.Browse('File'))
-        self.Browse_File.grid(column=3, row=3, padx=3, pady=5)
-        self.Display_Mask = Button(self.browseImagesWindow, text="Display Mask", width=15, command=lambda: self.drawing.DisplayMask())
-        self.Display_Mask.grid(column=4, row=3, padx=3, pady=5)
-
-
-        self.Process_Folder = Label(self.browseImagesWindow, text="Process Mask Folder")
-        self.Process_Folder.grid(column=0, row=4)
-        self.Folder_Location = tk.StringVar()
-        self.Folder_Location.set('')
-        self.Folder_TextBox = Entry(self.browseImagesWindow, width=100, textvariable=self.Folder_Location)
-        self.Folder_TextBox.grid(column=1, row=4)
-        self.Browse_Folder = Button(self.browseImagesWindow, text="...", width=5, command=lambda: self.Browse('Folder'))
-        self.Browse_Folder.grid(column=3, row=4, padx=3, pady=5)
-        self.Process_Folder = Button(self.browseImagesWindow, text="Process Folder", width=15,command=lambda: self.model.ProcessFolder())
-        self.Process_Folder.grid(column=4, row=4, padx=3, pady=5)
-
-        self.BinariseButton = Button(self.browseImagesWindow, text="Binarise", command=self.binariseImages)
-        self.BinariseButton.grid(column=0, row=5, padx=2, pady=5)
-        self.SeparateButton = Button(self.browseImagesWindow, text="Separate Grains", command=self.separate)
-        self.SeparateButton.grid(column=0, row=6, padx=2, pady=5)
-        self.breakLine = Button(self.browseImagesWindow, text="Draw Break Line", command=self.drawing.DrawBreakLine)
-        self.breakLine.grid(column=0, row=7, padx=2, pady=5)
-        self.saveChanges = Button(self.browseImagesWindow, text="Save Changes", command=self.SaveBreakChanges)
-        self.saveChanges.grid(column=0, row=8, padx=2, pady=5)
-        self.measureShapes = Button(self.browseImagesWindow, text="Measure Shapes",command=self.view.start_measure_shapes())
-        self.measureShapes.grid(column=0, row=9, padx=2, pady=5)
-        self.pushDB = Button(self.browseImagesWindow, text="Push to DB",command=self.model.push_shape_measurements_to_database)
-        self.pushDB.grid(column=0, row=10, padx=2, pady=5)
-        self.moveSpot = Button(self.browseImagesWindow, text="Reposition spot", command=self.drawing.PointMove)
-        self.moveSpot.grid(column=0, row=11, padx=2, pady=5)
-        self.grain_boundary_capture = Button(self.browseImagesWindow, text ="Grain Boundary Capture [p]", command=self.drawing.BoundaryDraw)
-        self.grain_boundary_capture.grid(column=0, row=12, padx=2, pady=5)
-
-        self.undo_delete = Button(self.browseImagesWindow, text="Undo Delete Contour", command=self.undo_delete_contour)
-        self.undo_delete.grid(column=0, row=13, padx=2, pady=5)
-
-        self.write_to_csv_button = Button(self.browseImagesWindow, text="Save to CSV", command=self.model.write_to_csv)
-        self.write_to_csv_button.grid(column=0, row=14, padx=2, pady=5)
 
     def SaveBreakChanges(self,new_contour=None):
         image, contours =self.model.SaveBreakChanges(new_contour)
@@ -365,12 +268,56 @@ class View:
             self.open_error_message_popup_window(str(e))
             return
 
-        self.drawing.display_image(image)
+        self.drawing.clear_canvas_and_display_image(image)
         for contour in contours:
             self.drawing.draw_contour(contour)
 
-    def start_measure_shapes(self,mask_file_path):
-        self.model.MeasureShapes(mask_file_path, False)
+    def start_measure_shapes(self,mask_path):
+        try:
+            image_to_display, contours, spotList, region_measurements = self.model.measure_shapes(mask_path, False)
+        except ValueError as e:
+            self.open_error_message_popup_window(str(e))
+            return
+        self.drawing.clear_canvas_and_display_image(image_to_display)
+        for spot in spotList:
+            self.drawing.draw_interactive_spot(spot, 'green')
+        MeasurementDialog(self,region_measurements)
+        #self.display_measurement_table(region_measurements)
+
+
+    def display_measurement_table(self,region_measurements):
+        '''
+        data = {'sampleid': sampleid_List,
+                'image_id': regionid_List,
+                'grain_number': label_List,
+                'grain_centroid': centroid_List,
+                'grainspot': spots_per_grain_List,
+                'area': area_List,
+                'equivalent_diameter': equivalent_diameter_List,
+                'perimeter': perimeter_List,
+                'minor_axis_length': minor_axis_length_List,
+                'major_axis_length': major_axis_length_List,
+                'solidity': solidity_List,
+                'convex_area': convex_area_List,
+                'formFactor': formFactor_List,
+                'roundness': roundness_List,
+                'compactness': compactness_List,
+                'aspectRatio': aspectRatio_List,
+                'minFeret': minFeret_List,
+                'maxFeret': maxFeret_List,
+                'contour': contour_List,
+                'image_dimensions': imDimensions_List,
+                'mask_image': maskImage_List
+                }
+        # Show me the table!
+        pd.set_option('display.max_rows', None)
+        pd.set_option('display.max_columns', None)
+        pd.set_option('display.width', None)
+        pd.set_option('display.max_colwidth', None)
+        dfShape = pd.DataFrame(data)
+        self.dfShapeRounded = dfShape.round(decimals=2)  # And I only want to see 2 decimal places
+        print(self.dfShapeRounded) '''
+
 
     def ProcessFolder(self):
         self.ProcessFolderFlag = True
@@ -378,14 +325,15 @@ class View:
             for name in files:
                 self.currentMask = self.Folder_Location.get()+'/'+name #the file path of the current mask we're processing
                 self.DisplayMask()
-                self.model.MeasureShapes(self.currentMask,True)
+                try:
+                    self.model.measure_shapes(self.currentMask, True)
+                except ValueError as e:
+                    self.open_error_message_popup_window(str(e))
+
                 self.model.push_shape_measurements_to_database()
                 self.currentMask = None
             self.ProcessFolderFlag = False
         print('Processing complete')
-
-    def display_spots_during_measurement(self, spotList):
-        self.drawing.display_spots_during_measurement(spotList)
 
     def DisplayMask(self, mask_file_path):
         try:
@@ -394,25 +342,16 @@ class View:
             self.open_error_message_popup_window(str(e))
             return
 
-        self.rl_path = region["RL_Path"] if "RL_Path" in region else self.RLPath.get()
-        self.tl_path = region["TL_Path"] if "TL_Path" in region else self.TLPath.get()
-        self.mask_path = region["Mask_Path"].split('\\')[0] if "Mask_Path" in region else self.MaskFolderLocation.get()
-
        # if self.ProcessFolderFlag == True:
        #     self.model.load_current_mask()
 
         image_pill = self.model.get_threshold_image()
-        self.drawing.display_image(image_pill)
+        self.drawing.clear_canvas_and_display_image(image_pill)
         self.model.extract_contours_from_image('contour')
-
-        return self.rl_path, self.tl_path, self.mask_path
 
     def write_to_csv(self):
         filepath = filedialog.asksaveasfilename(defaultextension = '.csv', filetypes = [("CSV Files","*.csv")], title="Save As")
         self.model.write_to_csv(filepath)
-
-    def SaveMask(self):
-        self.model.write_mask_to_png()
 
     def separate(self):
         composite_contour_list, image_to_show, is_image_binary, pairs_list = self.model.separate()
@@ -469,7 +408,7 @@ class View:
             self.height = img.shape[0]
             image_pill = Image.fromarray(img)
 
-        self.drawing.display_image(image_pill)
+        self.drawing.clear_canvas_and_display_image(image_pill)
 
         for polygon in self.model.get_current_image_contours():
             self.drawing.draw_contour(polygon)

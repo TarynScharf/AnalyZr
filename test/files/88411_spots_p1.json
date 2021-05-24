@@ -178,40 +178,6 @@
             "Mask_Path": "C:/Users/20023951/Documents/PhD/GSWA/Geochem_Interrogate/Masks/22012021\\88411_spots_p1_RL_dDRzzd58w.png"
         },
         {
-            "id": "WqO4ozqE",
-            "type": "RECTANGLE",
-            "tags": [
-                "RL"
-            ],
-            "boundingBox": {
-                "height": 561.9870129870129,
-                "width": 809.0061162079511,
-                "left": 5.99830370795107,
-                "top": 1170.3766233766232
-            },
-            "points": [
-                {
-                    "x": 5.99830370795107,
-                    "y": 1170.3766233766232
-                },
-                {
-                    "x": 815.0044199159021,
-                    "y": 1170.3766233766232
-                },
-                {
-                    "x": 815.0044199159021,
-                    "y": 1732.3636363636363
-                },
-                {
-                    "x": 5.99830370795107,
-                    "y": 1732.3636363636363
-                }
-            ],
-            "RL_Path": "C:/Users/20023951/PycharmProjects/ZirconSeparation/test/images/88411_spots_p1_RL_WqO4ozqE.png",
-            "TL_Path": "C:/Users/20023951/PycharmProjects/ZirconSeparation/test/images/88411_spots_p1_TL_PnCztOBkT.png",
-            "Mask_Path": "C:/Users/20023951/PycharmProjects/ZirconSeparation/test/Mask\\88411_spots_p1_RL_WqO4ozqE.png"
-        },
-        {
             "id": "nKc4mtbIG",
             "type": "RECTANGLE",
             "tags": [
@@ -419,37 +385,6 @@
             ]
         },
         {
-            "id": "9.1",
-            "type": "RECTANGLE",
-            "tags": [
-                "SPOT"
-            ],
-            "boundingBox": {
-                "height": 27.0,
-                "width": 32.0,
-                "left": 432.0,
-                "top": 1446.0
-            },
-            "points": [
-                {
-                    "x": 432.0,
-                    "y": 1446.0
-                },
-                {
-                    "x": 464.0,
-                    "y": 1446.0
-                },
-                {
-                    "x": 464.0,
-                    "y": 1473.0
-                },
-                {
-                    "x": 432.0,
-                    "y": 1473.0
-                }
-            ]
-        },
-        {
             "id": "10.1",
             "type": "POINT",
             "tags": [
@@ -515,6 +450,71 @@
                 {
                     "x": 1618.0,
                     "y": 1339.0
+                }
+            ]
+        },
+        {
+            "id": "WqO4ozqE",
+            "type": "RECTANGLE",
+            "tags": [
+                "RL"
+            ],
+            "boundingBox": {
+                "height": 561.987012987013,
+                "width": 809.006116207951,
+                "left": 5.99830370795107,
+                "top": 1170.3766233766232
+            },
+            "points": [
+                {
+                    "x": 5.99830370795107,
+                    "y": 1170.3766233766232
+                },
+                {
+                    "x": 815.0044199159021,
+                    "y": 1170.3766233766232
+                },
+                {
+                    "x": 815.0044199159021,
+                    "y": 1732.3636363636363
+                },
+                {
+                    "x": 5.99830370795107,
+                    "y": 1732.3636363636363
+                }
+            ],
+            "TL_Path": "C:/Users/20023951/PycharmProjects/ZirconSeparation/test/images/88411_spots_p1_TL_PnCztOBkT.png",
+            "RL_Path": "C:/Users/20023951/PycharmProjects/ZirconSeparation/test/images/88411_spots_p1_RL_WqO4ozqE.png",
+            "Mask_Path": "C:/Users/20023951/PycharmProjects/ZirconSeparation/test/Mask\\88411_spots_p1_mask_WqO4ozqE.png"
+        },
+        {
+            "id": "NewSpot40800fc6-09e9-42b8-ae07-d3fa26e91519",
+            "type": "RECTANGLE",
+            "tags": [
+                "SPOT AREA"
+            ],
+            "boundingBox": {
+                "height": 34.0,
+                "width": 34.0,
+                "left": 430.0,
+                "top": 1440.0
+            },
+            "points": [
+                {
+                    "x": 430.0,
+                    "y": 1440.0
+                },
+                {
+                    "x": 464.0,
+                    "y": 1440.0
+                },
+                {
+                    "x": 464.0,
+                    "y": 1474.0
+                },
+                {
+                    "x": 430.0,
+                    "y": 1474.0
                 }
             ]
         }

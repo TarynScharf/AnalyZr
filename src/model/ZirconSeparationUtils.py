@@ -17,16 +17,22 @@ from skimage.measure import label
 
 from statistics import mean
 
-def getScale(jF,location, tag):
-    sampleid = jF.split('_')[0]
+from src.model import FileUtils
+from src.model.json_data import JsonData
+
+
+def getScale(json_file_path, tag):
+    sampleid = JsonData.get_sample_id_from_file_path(json_file_path)
+    json_folder_path = FileUtils.get_folder(json_file_path)
+
     spot_length_list = []
     scale_length_list=[]
-    for  path, folder, files in os.walk(location):
+    for  path, folder, files in os.walk(json_folder_path):
         for name in files:
             sample = name.split('_')[0]
             ext =os.path.splitext(name)[1]
             if sample == sampleid and ext == '.json':
-                with open(os.path.join(location,name),errors='ignore') as jFile:
+                with open(os.path.join(json_folder_path, name), errors='ignore') as jFile:
                     data = json.load(jFile)
                 for region in data['regions']:
                     if region['type'] == 'RECTANGLE' and region['tags'][0]==tag:
@@ -35,7 +41,7 @@ def getScale(jF,location, tag):
                     elif region['type']=="scale" and region['tags'][0]==tag:
                         scale_length_list.append(region['boundingBox']['height'])
     if len(spot_length_list)==0:
-        return -1
+        return None
 
     aveLength = mean(spot_length_list)
     return aveLength
@@ -50,10 +56,8 @@ def removeSmallObjects(img, factor = 6):
         areaList.append(props[x].area)
 
     areaList.sort(reverse=True)
-    print(areaList)
     if len(areaList)>0:
         maxArea = areaList[0]
-        print(maxArea)
         min_size = maxArea/factor
         #print('min_size', min_size)
         remSmall = remove_small_objects(labelim,min_size, in_place=False)

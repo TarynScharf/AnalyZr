@@ -176,3 +176,45 @@ if region['tags'][0] == 'RL' and region['type'] == 'POLYGON':
         idCoordList.append([coordID, x0, y0])
         # self.myCanvas.create_oval(x0-4, y0-4, x0+4, y0+4, fill='white',activefill = 'yellow', activeoutline='yellow', outline='grey', width=2,tags = (groupID, coordID))
 """
+
+
+def UpdatePointMove(self, moveEvent):
+    if self.Move == False:
+        return
+
+    self.x0 = self.myCanvas.canvasx(moveEvent.x)
+    self.y0 = self.myCanvas.canvasy(moveEvent.y)
+
+    # delete the pre-existing point then redraw in the new position
+    self.myCanvas.delete(self.unique_tag)
+    self.myCanvas.create_oval(self.x0 - 6, self.y0 - 6, self.x0 + 6, self.y0 + 6, fill='lightgreen',
+                              activefill='yellow', activeoutline='yellow', outline='green',
+                              width=2, tags=(self.groupID, self.unique_tag))
+
+    xyList = []  # used locally to draw the  polygon with  updated xy
+    # get all items with the same group tag. This will include all ovals and the polygon
+    all_IDs = self.myCanvas.find_withtag(self.groupID)
+    for ID in all_IDs:
+        uniqueID = self.myCanvas.gettags(ID)[1]  # get the unique ID of each entity that shares the group ID
+        if "poly" in uniqueID or 'contour_' in uniqueID:  # test whether it's a polygon
+            # find the point that was clicked on and update it's xy coords
+            for i in range(len(self.allPolys[uniqueID])):
+                if self.allPolys[uniqueID][i][0] == self.unique_tag:
+                    self.allPolys[uniqueID][i][1] = self.x0
+                    self.allPolys[uniqueID][i][2] = self.y0
+            for point in self.allPolys[uniqueID]:
+                xyList.append(point[1])
+                xyList.append(point[2])
+            groupID = self.myCanvas.gettags(uniqueID)[0]  # find the group tag
+            if len(self.allPolys[uniqueID]) > 2:
+                self.myCanvas.delete(uniqueID)  # delete pre-existing poly and redraw with new coordinates
+                self.myCanvas.create_polygon(xyList, fill='', outline='red', activeoutline='yellow', width=1,
+                                             tags=(groupID, uniqueID))
+            elif len(self.allPolys[uniqueID]) == 2:
+                self.myCanvas.create_line(xyList, fill='red', activeoutline='yellow', tags=(groupID, uniqueID))
+            else:
+                pass
+        if 'spotno' in uniqueID:  # if its a label on a spot
+            self.myCanvas.delete(uniqueID)
+            self.myCanvas.create_text(self.x0 - 10, self.y0 - 10, fill='green', text=self.spotID, tags=(self.groupID, uniqueID))
+            self.spotID = uniqueID.split('_')[1]

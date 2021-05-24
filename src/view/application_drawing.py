@@ -34,8 +34,6 @@ class Drawing():
         self.myCanvas.pack(side=LEFT, expand=True, fill=BOTH)
         self.myCanvas.bind_all("<MouseWheel>", self.ScrollWithMouseWheel)
 
-        self.currentImage = None
-
         # variables for drawing
         self.uniqueTag = None
         self.groupTag = None
@@ -49,6 +47,8 @@ class Drawing():
         self.rectangleType = None
         self.breakline = None
 
+        self.displayed_image = None
+
     def DeleteObject(self, event):
         thisObj = event.widget.find_withtag('current')[0]  # get the object clicked on
         tags = self.myCanvas.gettags(thisObj)  # find the groupID for the object clicked on
@@ -57,7 +57,7 @@ class Drawing():
             return
         unique_tag = tags[1] #images only have a group tag, no unique tag
         coords = self.myCanvas.coords(unique_tag)
-        self.myCanvas.delete(unique_tag)  # delete everything with the same groupID
+        self.myCanvas.delete(group_tag)  # delete everything with the same groupID
         self.model.DeleteObject(group_tag,coords) #pass the groupID and coordinates to the model, where everything else is handled
 
     def ScrollWithMouseWheel(self, event):
@@ -159,75 +159,42 @@ class Drawing():
         new_polygon = self.model.add_new_contour(self.contour)
         self.view.SaveBreakChanges(new_polygon)
 
-    def display_image(self, image):
+    def clear_canvas_and_display_image(self, image):
         self.myCanvas.delete('all')
+        self.display_image(image)
+
+    def display_image(self, image):
         tk_img = ImageTk.PhotoImage(image=image)
         self.myCanvas.configure(scrollregion=[0, 0, tk_img.width(), tk_img.height()])
         self.myCanvas.create_image(0, 0, image=tk_img, anchor=NW, tags="Image")
-        self.currentImage = tk_img
+        #self.myCanvas.tag_lower('Image')
+        #This variable looks unused but must be kept so that the image is not garbage collected
+        self.displayed_image  = tk_img
 
     def PointMove(self):
         self.myCanvas.bind("<Button-1>", self.StartPointMove)
         self.myCanvas.bind("<ButtonRelease-1>", self.FinishPointMove)
 
     def StartPointMove(self, moveEvent):
-        thisObj = moveEvent.widget.find_withtag('current')[0]  # get the groupID of the entity
-        self.thisObjID = self.myCanvas.gettags(thisObj)[1]  # This will make the unique point ID available in the next step:move. Because move doesn't click on a specific entity, there is no ID associated with 'current'
-        self.groupID = self.myCanvas.gettags(thisObj)[0]
+        thisObj = moveEvent.widget.find_withtag('current')[0]
+        unique_tag = self.myCanvas.gettags(thisObj)[1]
         self.myCanvas.bind("<B1-Motion>", self.UpdatePointMove)
         self.myCanvas.bind("<ButtonRelease-1>", self.FinishPointMove)
-        self.Move = False
-        if 'p' in self.thisObjID or 'spot' in self.thisObjID:  # Only points can be moved!
-            self.Move = True
-
+        self.spot = self.view.model.find_spot_in_measured_image_by_unique_tag(unique_tag)
+        self.myCanvas.delete(self.spot.unique_text_tag)
 
     def UpdatePointMove(self, moveEvent):
-        if self.Move == False:
-            return
-
-        xyList = []  # used locally to draw the  polygon with  updated xy
-        self.x0 = self.myCanvas.canvasx(moveEvent.x)
-        self.y0 = self.myCanvas.canvasy(moveEvent.y)
-        self.myCanvas.delete(self.thisObjID)  # delete the pre-existing point then redraw in the new position
-        self.myCanvas.create_oval(self.x0 - 6, self.y0 - 6, self.x0 + 6, self.y0 + 6, fill='lightgreen',
-                                  activefill='yellow', activeoutline='yellow', outline='green',
-                                  width=2, tags=(self.groupID, self.thisObjID))
-        all_IDs = self.myCanvas.find_withtag(
-            self.groupID)  # get all items with the same group tag. This will include all ovals and the polygon
-        for ID in all_IDs:
-            uniqueID = self.myCanvas.gettags(ID)[1]  # get the unique ID of each entity that shares the group ID
-            if "poly" in uniqueID or 'contour_' in uniqueID:  # test whether it's a polygon
-                for i in range(len(
-                        self.allPolys[uniqueID])):  # find the point that was clicked on and update it's xy coords
-                    if self.allPolys[uniqueID][i][0] == self.thisObjID:
-                        self.allPolys[uniqueID][i][1] = self.x0
-                        self.allPolys[uniqueID][i][2] = self.y0
-                for point in self.allPolys[uniqueID]:
-                    xyList.append(point[1])
-                    xyList.append(point[2])
-                groupID = self.myCanvas.gettags(uniqueID)[0]  # find the group tag
-                if len(self.allPolys[uniqueID]) > 2:
-                    self.myCanvas.delete(uniqueID)  # delete pre-existing poly and redraw with new coordinates
-                    self.myCanvas.create_polygon(xyList, fill='', outline='red', activeoutline='yellow', width=1,
-                                                 tags=(groupID, uniqueID))
-                elif len(self.allPolys[uniqueID]) == 2:
-                    self.myCanvas.create_line(xyList, fill='red', activeoutline='yellow', tags=(groupID, uniqueID))
-                else:
-                    pass
-            if 'spotno' in uniqueID:  # if its a label on a spot
-                self.myCanvas.delete(uniqueID)
-                self.myCanvas.create_text(self.x0 - 10, self.y0 - 10, fill='green', text=self.spotID,tags=(self.groupID, uniqueID))
-                self.spotID = uniqueID.split('_')[1]
+        self.spot.x0 = self.myCanvas.canvasx(moveEvent.x)
+        self.spot.y0 = self.myCanvas.canvasy(moveEvent.y)
+        self.myCanvas.coords(self.spot.unique_tag, self.spot.x0-6, self.spot.y0-6,self.spot.x0+6, self.spot.y0+6)
+        self.myCanvas.coords(self.spot.unique_text_tag, self.spot.x0-7, self.spot.y0-7)
 
     def FinishPointMove(self, moveEvent):
         self.myCanvas.unbind("<B1-Motion>")
         self.myCanvas.unbind("<ButtonRelease-1>")
-
-        self.model.update_spot_in_json_file(self.spotID,self.x0,self.y0)
-
-        self.uniqueTag = None
-        self.groupTag = None
-        self.spotID = ''
+        self.model.update_spot_in_json_file(self.spot)
+        self.draw_text(self.spot.get_text_tags(),self.spot.x0-7, self.spot.y0-7, self.spot.group_tag, 'green')
+        self.spot = None
 
     def RectSpotDraw(self):
         self.rectangleType = RectangleType.SPOT_AREA
@@ -355,7 +322,7 @@ class Drawing():
         canvas_data, (canvas_width,canvas_height) = canvas.print_to_buffer()  # taken from here: https://matplotlib.org/3.1.1/gallery/user_interfaces/canvasagg.html
         image_matrix = np.frombuffer(canvas_data, np.uint8).reshape((canvas_height, canvas_width, 4))
         image_pill = PIL.Image.frombytes("RGBA", (canvas_width, canvas_height), image_matrix)
-        self.display_image(image_pill)
+        self.clear_canvas_and_display_image(image_pill)
 
     def draw_image_data(self, image_data):
         for spot in image_data.spots:
@@ -377,15 +344,13 @@ class Drawing():
         self.myCanvas.create_rectangle(rectangle.x0, rectangle.y0, rectangle.x1, rectangle.y1, width=3, outline=rectangle.get_colour(), activefill='yellow',
                                        activeoutline='yellow',
                                        tags=rectangle.get_tags())
-        self.myCanvas.create_text(rectangle.x0, rectangle.y0 - 15, text=rectangle.type.value, fill=rectangle.get_colour(), font=("Helvetica", 12, "bold"),
-                                  tags=rectangle.get_text_tags())
+        self.draw_text(rectangle.get_text_tags(), rectangle.x0, rectangle.y0 - 15,rectangle.type.value, rectangle.get_colour())
 
     def draw_interactive_spot(self, spot,colour):
         self.myCanvas.create_oval(spot.x0 - 6, spot.y0 - 6, spot.x0 + 6, spot.y0 + 6, width=2, outline=colour, fill=colour,
                                   activefill='yellow', activeoutline='yellow',
                                   tags=spot.get_tags())
-
-        self.myCanvas.create_text(spot.x0, spot.y0 - 5, text=spot.group_tag, fill=colour, font=("Helvetica", 8, "bold"), tags=spot.get_text_tags())
+        self.draw_text(spot.get_text_tags(),spot.x0, spot.y0-15, spot.group_tag, colour)
         self.myCanvas.tag_bind(spot.unique_tag, '<ButtonPress-1>', self.view.create_spot_capture_dialog)
 
     def draw_interactive_scale(self, scale):
@@ -404,3 +369,7 @@ class Drawing():
             self.myCanvas.create_polygon(coords, fill='', outline='red', activeoutline='yellow', width=1, tags=contour.get_tags())  # redraw,now includes the added point
         else:
             self.myCanvas.create_line(coords, fill='red', activefill='yellow', width=1, tags=contour.get_tags())  # if there are only two points, its a line not a polygon
+
+
+    def draw_text(self,tags,x,y,text,colour):
+        self.myCanvas.create_text(x, y, text=text, fill=colour, font=("Helvetica", 8, "bold"), tags=tags)

@@ -12,7 +12,7 @@ def calcFormula(pt1, pt2):
 
 
 def feret_diameter(blob):  # adapted from here: https://github.com/scikit-image/scikit-image/blob/332adb877c11a03e7406942a143ea745c50e2d2a/skimage/measure/_regionprops.py
-    padBlob = pad(blob, pad_width=(5, 5), mode='constant', constant_values=0)
+    padBlob = np.pad(blob, pad_width=(5, 5), mode='constant', constant_values=0)
     contours = find_contours(padBlob, 0.5, fully_connected='high')
     u8 = padBlob.astype(np.uint8)
     contoursCV, heirarchy = cv2.findContours(u8, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
