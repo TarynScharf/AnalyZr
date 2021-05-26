@@ -1,3 +1,4 @@
+import copy
 import csv
 import datetime
 import json
@@ -8,6 +9,7 @@ import tkinter as tk
 import cv2
 import matplotlib
 import numpy as np
+import pyodbc
 import shapely
 # import skimage.segmentation because else it
 # says there's no segmentation module
@@ -40,6 +42,8 @@ class Model():
         self.tl_path = None
         self.binarise_rl_image = None
         self.binarise_tl_image = None
+        self.rl_image = None
+        self.tl_image = None
 
         self.Current_Image = None
 
@@ -59,6 +63,7 @@ class Model():
         self.spots_in_measured_image = None
         self.text_label = ''  # label for duplicate grains and spot scales
         self.count = 0  # Used to put id's onto break  lines
+        self.database_file_path = None
 
         self.x0 = None
         self.y0 = None
@@ -407,83 +412,52 @@ class Model():
 
         self.sampleList.sort()
 
-    def write_to_csv(self,filepath):
-        colArray = ['sampleid', 'image_id', 'grain_number', 'grain_centroid', 'grain_spots', 'area',
-                    'equivalent_diameter', 'perimeter', 'minor_axis_length', 'major_axis_length',
-                    'solidity', 'convex_area', 'formFactor', 'roundness', 'compactness', 'aspectRatio', 'minFeret',
-                    'maxFeret', 'contour', 'image_dimensions', 'mask_image']
+    def write_to_csv(self,filepath, measurements):
+        headers = RegionMeasurement.get_headers()
 
         with open(filepath, mode='w', newline='') as csv_file:
             csv_writer = csv.writer(csv_file, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)
-            csv_writer.writerow(colArray)
+            csv_writer.writerow(headers)
 
-            for row in self.dfShapeRounded.itertuples(False):
-                data = []
-                if row[4] != ' ':
-                    spots = row[4].split(',')
-                    for spot in spots:
-                        data = []
-                        for x in range(len(row)):
-                            if x != 4:
-                                data.append(row[x])
-                            else:
-                                data.append(spot)
-                        csv_writer.writerow(data)
+            for measurement in measurements:
+                csv_writer.writerow(measurement.as_list())
 
-                else:
-                    data = []
-                    for i in range(len(row)):
-                        data.append(row[i])
-                    csv_writer.writerow(data)
+    def set_database_file_path(self, database_file_path):
+        self.database_file_path = database_file_path
 
-    def push_shape_measurements_to_database(self):
+    def push_shape_measurements_to_database(self, measurements):
+        cursor = None
+        connection = None
         # push the shape descriptors to the shape_descriptor table
-        connection = pyodbc.connect(
-            r'DRIVER={Microsoft Access Driver (*.mdb, *.accdb)};DBQ=C:/Users/20023951/Documents/PhD/GSWA/GSWA_2019Geochron/DATABASES/Test.mdb')  # Set up a connection string
-        colArray = 'sampleid, image_id, grain_number,grain_centroid, grain_spots, area, equivalent_diameter, perimeter, minor_axis_length,major_axis_length, solidity, convex_area, formFactor,roundness, compactness, aspectRatio, minFeret, maxFeret, contour, image_dimensions,mask_image'
-        cursor = connection.cursor()
-        if self.json_file_name == '':
-            self.error_message_text = 'Shapes have not been measured'
-            self.open_error_message_popup_window()
-            return
-        elif self.File_Location.get() != '':
-            maskName = self.File_Location.get().split('/')[-1]
-            t_regionID = maskName.split('_')
-            regionID = '_'.join(t_regionID[4:]).replace('.png', '')
-        elif self.currentMask is not None:
-            maskName = self.currentMask.split('/')[-1]
-            t_regionID = maskName.split('_')
-            regionID = '_'.join(t_regionID[4:]).replace('.png', '')
-        queryStatement = "Select * from shape_descriptors where image_id = '" + regionID + "'"
+        try:
+            connection = pyodbc.connect(r'DRIVER={Microsoft Access Driver (*.mdb, *.accdb)};DBQ='+str(self.database_file_path))
+            cursor = connection.cursor()
+            colArray = ','.join(RegionMeasurement.get_database_headers())
+            regionID = measurements[0].image_id
+            queryStatement = "Select * from import_shapes where image_id = '" + regionID + "'"
+            cursor.execute(queryStatement)
+            results = cursor.fetchall()
 
-        cursor.execute(queryStatement)
-        results = cursor.fetchall()
+            if len(results) >0:
+                raise ValueError(f'Sample already in DB: {regionID}')
 
-        if len(results) == 0:
-            for row in self.dfShapeRounded.itertuples(False):
-                valuesString = ''
-
-                for i in range(len(row)):
-                    if i < len(row) - 1:
-                        if i == 18 or i == 4 or i == 19 or i == 3 or i == 1:
-                            valuesString = valuesString + "'" + str(row[i]) + "',"
-                        else:
-                            valuesString = valuesString + str(row[i]) + ','
-
-                    if i == len(row) - 1:
-                        valuesString = valuesString + "'" + str(row[i]) + "'"
-
-                insertStatement = '''INSERT INTO shape_descriptors(''' + colArray + ''') VALUES(''' + valuesString + ''')'''
-
+            for measurement in measurements:
+                value_string = ','.join(measurement.get_database_row)
+                insertStatement = '''INSERT INTO import_shapes(''' + colArray + ''') VALUES(''' + value_string + ''')'''
                 cursor.execute(insertStatement)
                 cursor.commit()
-            cursor.close()
-            connection.close()
-            print('Insert complete: ', regionID)
-        else:
-            cursor.close()
-            connection.close()
-            print('Sample already in DB: ', regionID)
+
+        except Exception as e:
+            if isinstance(e,ValueError):
+                raise e
+            else:
+                raise ValueError(f'Could not access database at {self.database_file_path}')
+
+        finally:
+            if cursor:
+                cursor.close()
+            if connection:
+                connection.close()
 
     def set_mask_path(self, mask_path):
         self.mask_path = mask_path
@@ -537,7 +511,7 @@ class Model():
 
         #This gets written to the output so that someone can regenerate the
         #contour image at a later point, if the original mask is lost
-        region_dimension_string = f'{region_top},{region_left},{region_right},{region_bottom}'
+        #region_dimension_string = f'{region_top},{region_left},{region_right},{region_bottom}'
 
         for spot in json_data.spots:
             # this will look for all spots in the pdf page, regardless of whether or not they are actually on the cropped image under consideration
@@ -566,7 +540,7 @@ class Model():
         else:
             raise ValueError('No scale available in sample')
 
-        return spotList,regions_to_remove_from_mask_image,scale_in_real_world_distance,region_dimension_string
+        return spotList,regions_to_remove_from_mask_image,scale_in_real_world_distance,region_object
 
     def get_region_dimensions_from_json(self, data, regionID):
         if regionID == "":  # if the photo  in question does not comprise subregions (i.e. not a photo collage)
@@ -612,7 +586,7 @@ class Model():
                 return spots,contour
         return spots,None
 
-    def create_measurement_table(self,sampleid,regionID,imageDimensions,micPix, mask_file_path,all_spots):
+    def create_measurement_table(self, sampleid, regionID, image_region, micPix, mask_file_path, all_spots):
         self.contours_by_group_tag = {}
         contoursFinal, hierarchyFinal = cv2.findContours(self.threshold, cv2.RETR_TREE,
                                                          cv2.CHAIN_APPROX_SIMPLE)  # cv2.CHAIN_APPROX_SIMPLE, cv2.RETR_EXTERNAL
@@ -624,7 +598,6 @@ class Model():
             # Convex image is good enough because it'll give us the max points and min edges for maxFeret and minFeret
             maxFeret, minFeret = zircon_measurement_utils.feret_diameter(props[x].convex_image)
             spots_in_region,contour = self.find_spots_in_region(props[x].label,all_spots,contoursFinal)
-
 
             measurement = RegionMeasurement(
                     sampleid = sampleid,
@@ -641,13 +614,13 @@ class Model():
                     maxFeret = maxFeret * micPix,
                     minFeret = minFeret * micPix,
                     contour = contour,
-                    image_dimensions =imageDimensions,
+                    image_dimensions =image_region,
                     mask_image =mask_file_path)
             if len(spots_in_region)==0:
                 measurements.append(measurement)
             else:
                 for spot in spots_in_region:
-                    spot_measurement = measurement.copy()
+                    spot_measurement = copy.deepcopy(measurement)
                     spot_measurement.grainspot = spot.group_tag
                     measurements.append(spot_measurement)
 
@@ -666,7 +639,7 @@ class Model():
 
         return image_to_display
 
-    def measure_shapes(self, mask_path, processFolderFlag):
+    def measure_shapes(self, mask_path):
         if self.json_folder_path is None:
             raise ValueError('No json folder path selected')
 
@@ -676,13 +649,13 @@ class Model():
         self.spots_in_measured_image = None
         self.contours_by_group_tag={}
 
-        self.preprocess_image_for_measurement(mask_path)
+        self.threshold = self.preprocess_image_for_measurement(mask_path)
 
-        spotList, regions_to_remove_from_mask_image, scale_in_real_world_units, imageDimensions = self.read_spots_unwanted_scale_from_json(data,json_file_path,region_id)
+        spotList, regions_to_remove_from_mask_image, scale_in_real_world_units, image_region = self.read_spots_unwanted_scale_from_json(data,json_file_path,region_id)
         self.spots_in_measured_image = spotList
         self.remove_unwanted_objects_from_binary_image(regions_to_remove_from_mask_image)
 
-        region_measurements = self.create_measurement_table(sample_id,region_id,imageDimensions,scale_in_real_world_units,mask_path,spotList)
+        region_measurements = self.create_measurement_table(sample_id,region_id,image_region,scale_in_real_world_units,mask_path,spotList)
 
         labeled_image = self.create_labeled_image(region_measurements)
 
@@ -803,12 +776,15 @@ class Model():
             area = cv2.contourArea(contour, False)
             return area>=50
 
+        print(datetime.datetime.now())
         reconstructed_points = [] #for testing
         self.threshold = self.convert_contours_to_mask_image(self.height,self.width, self.contours_by_group_tag.values())
 
+        print(datetime.datetime.now())
         contours, hierarchy = cv2.findContours(self.threshold, cv2.RETR_TREE,cv2.CHAIN_APPROX_SIMPLE)  # get the new contours of the eroded masks
         hierarchy = np.squeeze(hierarchy)
 
+        print(datetime.datetime.now())
         composite_contour_list = []
         for i in range(len(contours)):
             cnt = np.squeeze(contours[i]).tolist()
@@ -824,15 +800,20 @@ class Model():
                 composite_contour.keep_contour = False
                 continue
 
+            print(i, datetime.datetime.now())
             get_coefficients_result = ZirconSeparationUtils.get_efd_parameters_for_simplified_contour(composite_contour.original_points, composite_contour.has_parent, filter_polygon_by_area)
+            print(i, datetime.datetime.now())
             if get_coefficients_result is None:
                 composite_contour.keep_contour = False
                 continue
             composite_contour.coefficients, composite_contour.locus, composite_contour.reconstructed_points = get_coefficients_result
 
             composite_contour.curvature_values, composite_contour.cumulative_distance = ZirconSeparationUtils.calculateK(composite_contour.reconstructed_points, composite_contour.coefficients) #composite_contour.reconstructed_points
+            print(i, datetime.datetime.now())
             curvature_maxima_length_positions, curvature_maxima_values, curvature_maxima_x, curvature_maxima_y, non_maxima_curvature = ZirconSeparationUtils.FindCurvatureMaxima(composite_contour.curvature_values,composite_contour.cumulative_distance,composite_contour.reconstructed_points)
+            print(i, datetime.datetime.now())
             node_curvature_values, node_distance_values, node_x, node_y = ZirconSeparationUtils.IdentifyContactPoints(curvature_maxima_length_positions, curvature_maxima_values, curvature_maxima_x, curvature_maxima_y, non_maxima_curvature)
+            print(i, datetime.datetime.now())
 
             if node_curvature_values != []:
                 composite_contour.max_curvature_values = node_curvature_values
@@ -846,9 +827,11 @@ class Model():
             else:
                 composite_contour.keep_contour = False
 
+        print(datetime.datetime.now())
 
         groups = ZirconSeparationUtils.FindNestedContours(hierarchy)
 
+        print(datetime.datetime.now())
         if self.tl_path != '':
             image_to_show = self.tl_image
             is_image_binary = False
@@ -860,6 +843,7 @@ class Model():
             is_image_binary = True
 
         # now link all nodes within the groups:
+        self.breaklines.clear()
         count = 0
         for group in groups:
             # get the contours that are relevant to the group in question:
@@ -877,6 +861,7 @@ class Model():
                 count += 1
                 self.breaklines.append(breakline)
 
+        print(datetime.datetime.now())
         return composite_contour_list, image_to_show, is_image_binary, self.breaklines
 
     def set_rl_tl_paths_and_usage(self,rl_path, tl_path,binarise_rl_image, binarise_tl_image):
@@ -884,6 +869,18 @@ class Model():
         self.tl_path = tl_path
         self.binarise_rl_image = binarise_rl_image
         self.binarise_tl_image = binarise_tl_image
+
+    def set_image_details(self, image_path, image_type):
+        if image_type == ImageType.RL:
+            self.rl_path = image_path
+            self.rl_image = cv2.imread(self.rl_path)
+
+        elif image_type == ImageType.TL:
+            self.tl_path = image_path
+            self.tl_image = cv2.imread(self.tl_path)
+
+        elif image_type == ImageType.MASK:
+            self.mask_path= image_path
 
     def set_current_image(self,image_type):
         if image_type == ImageType.TL:

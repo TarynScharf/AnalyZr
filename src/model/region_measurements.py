@@ -1,5 +1,5 @@
 import math
-
+import numpy as np
 
 class RegionMeasurement():
     def __init__(self,
@@ -35,40 +35,71 @@ class RegionMeasurement():
         self.minFeret = minFeret
         self.maxFeret = maxFeret
         self.contour =contour
-        self.image_dimensions =image_dimensions
+        self.image_region =image_dimensions
         self.mask_image =mask_image
 
-        self.formFactor = (4 * math.pi * area) / (perimeter ** 2),
-        self.roundness = (4 * area) / (math.pi * (major_axis_length ** 2)),
-        self.compactness = (math.sqrt((4 / math.pi) * area) / major_axis_length),
+        self.formFactor = (4 * math.pi * area) / (perimeter ** 2)
+        self.roundness = (4 * area) / (math.pi * (major_axis_length ** 2))
+        self.compactness = (math.sqrt((4 / math.pi) * area) / major_axis_length)
         self.aspectRatio = major_axis_length / minor_axis_length
 
     def as_list(self):
+        contour = ",".join([f'({x},{y})'for x,y in np.squeeze(self.contour)])
+        image_dimensions = f'{int(round(self.image_region.y0))},{int(round(self.image_region.x0))},{int(round(self.image_region.y1))},{int(round(self.image_region.x1))}'
+        def round_decimals_for_display(value, decimal=2):
+            return str(round(value,decimal))
+
         return [self.sampleid,
                 self.image_id,
                 self.grain_number,
-                self.grain_centroid,
                 self.grainspot,
-                self.area,
-                self.equivalent_diameter,
-                self.perimeter,
-                self.minor_axis_length,
-                self.major_axis_length,
-                self.solidity,
-                self.convex_area,
-                self.formFactor,
-                self.roundness,
-                self.compactness,
-                self.aspectRatio,
-                self.minFeret,
-                self.maxFeret,
-                self.contour,
-                self.image_dimensions,
-                self.mask_image
+                round_decimals_for_display(self.grain_centroid[0]),
+                round_decimals_for_display(self.grain_centroid[1]),
+                round_decimals_for_display(self.area),
+                round_decimals_for_display(self.equivalent_diameter),
+                round_decimals_for_display(self.perimeter),
+                round_decimals_for_display(self.minor_axis_length),
+                round_decimals_for_display(self.major_axis_length),
+                round_decimals_for_display(self.solidity),
+                round_decimals_for_display(self.convex_area),
+                round_decimals_for_display(self.formFactor),
+                round_decimals_for_display(self.roundness),
+                round_decimals_for_display(self.compactness),
+                round_decimals_for_display(self.aspectRatio),
+                round_decimals_for_display(self.minFeret),
+                round_decimals_for_display(self.maxFeret),
+                image_dimensions,
+                self.mask_image,
+                contour
                 ]
 
     @staticmethod
     def get_headers():
+        return ['sample_id',
+                'image_id',
+                'grain_number',
+                'analytical_spot',
+                'grain_centroid_x',
+                'grain_centroid_y',
+                'area',
+                'equivalent_diameter',
+                'perimeter',
+                'minor_axis_length',
+                'major_axis_length',
+                'solidity',
+                'convex_area',
+                'formFactor',
+                'roundness',
+                'compactness',
+                'aspect_ratio',
+                'min_feret',
+                'max_feret',
+                'image_dimensions',
+                'mask_image',
+                'contour'
+                ]
+    @staticmethod
+    def get_database_headers(self):
         return ['sampleid',
                 'image_id',
                 'grain_number',
@@ -89,5 +120,32 @@ class RegionMeasurement():
                 'maxFeret',
                 'contour',
                 'image_dimensions',
-                'mask_image'
+                'mask_image']
+
+    def get_database_row(self):
+
+        def quote(value):
+            return f"'{value}'"
+
+        return [self.sampleid,
+                quote(self.image_id),
+                self.grain_number,
+                quote(self.grain_centroid),
+                quote(self.grain_spots),
+                self.area,
+                self.equivalent_diameter,
+                self.perimeter,
+                self.minor_axis_length,
+                self.major_axis_length,
+                self.solidity,
+                self.convex_area,
+                self.formFactor,
+                self.roundness,
+                self.compactness,
+                self.aspectRatio,
+                self.minFeret,
+                self.maxFeret,
+                quote(self.contour),
+                quote(self.image_dimensions),
+                quote(self.mask_image)
                 ]
