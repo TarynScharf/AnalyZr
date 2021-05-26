@@ -97,7 +97,6 @@ class View:
         self.label.grid(column=1, row=0, padx=5, pady=10)
         self.width = None #width of displayed image
         self.height = None #height of displaed image
-        self.ProcessFolderFlag = False
 
         self.json_folder_path = tk.StringVar()
 
@@ -161,6 +160,7 @@ class View:
 
         elif case == 'TL': #if browsing for a TL image in the binarise menu
             filename = filedialog.askopenfilename(parent = window, filetypes=[("all files", "*.*")])
+            return filename
 
         elif case == 'Mask': #if browsing for a mask image in the binarise menu
             folderName = filedialog.askdirectory()
@@ -274,7 +274,7 @@ class View:
 
     def start_measure_shapes(self,mask_path):
         try:
-            image_to_display, contours, spotList, region_measurements = self.model.measure_shapes(mask_path, False)
+            image_to_display, contours, spotList, region_measurements = self.model.measure_shapes(mask_path)
         except ValueError as e:
             self.open_error_message_popup_window(str(e))
             return
@@ -319,21 +319,27 @@ class View:
         print(self.dfShapeRounded) '''
 
 
-    def ProcessFolder(self):
-        self.ProcessFolderFlag = True
-        for path,folder,files in os.walk(self.Folder_Location.get()):
+    def process_all_masks_in_folder(self, mask_file_folder):
+        for path,folder,files in os.walk(mask_file_folder):
             for name in files:
-                self.currentMask = self.Folder_Location.get()+'/'+name #the file path of the current mask we're processing
-                self.DisplayMask()
+                current_mask_file_path = os.path.join(mask_file_folder,name) #the file path of the current mask we're processing
+                self.DisplayMask(current_mask_file_path)
                 try:
-                    self.model.measure_shapes(self.currentMask, True)
+                    _, _, _, measurements = self.model.measure_shapes(current_mask_file_path)
+                    self.model.push_shape_measurements_to_database(measurements)
                 except ValueError as e:
                     self.open_error_message_popup_window(str(e))
-
-                self.model.push_shape_measurements_to_database()
-                self.currentMask = None
-            self.ProcessFolderFlag = False
         print('Processing complete')
+
+    def ensure_database_path_set(self):
+        if self.model.database_file_path is not None:
+            return
+
+        database_file_path = self.Browse('File',self.master)
+        if not database_file_path:
+            return
+
+        self.model.set_database_file_path(database_file_path)
 
     def DisplayMask(self, mask_file_path):
         try:
@@ -348,10 +354,6 @@ class View:
         image_pill = self.model.get_threshold_image()
         self.drawing.clear_canvas_and_display_image(image_pill)
         self.model.extract_contours_from_image('contour')
-
-    def write_to_csv(self):
-        filepath = filedialog.asksaveasfilename(defaultextension = '.csv', filetypes = [("CSV Files","*.csv")], title="Save As")
-        self.model.write_to_csv(filepath)
 
     def separate(self):
         composite_contour_list, image_to_show, is_image_binary, pairs_list = self.model.separate()

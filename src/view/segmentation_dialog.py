@@ -36,51 +36,54 @@ class SegmentationDialog():
         self.RLPath = tk.StringVar()
         self.RLPath.set('')
         self.rlVar = IntVar()
-        self.RLPath.set('C:/Users/20023951/PycharmProjects/ZirconSeparation/test/images/88411_spots_p1_RL_WqO4ozqE.png')
+        self.RLPath.set('C:/Users/20023951/Documents/PhD/GSWA/Geochem_Interrogate/Inv1_Images/granite/189937_spots/Cropped/189937_spots_p2_RL_SO9e8wLIz.png')
 
         self.TLPath = tk.StringVar()
         self.TLPath.set('')
-        self.TLPath.set('C:/Users/20023951/PycharmProjects/ZirconSeparation/test/images/88411_spots_p1_TL_PnCztOBkT.png')
+        self.TLPath.set('C:/Users/20023951/Documents/PhD/GSWA/Geochem_Interrogate/Inv1_Images/granite/189937_spots/Cropped/189937_spots_p2_TL_HQ1Cl19PT.png')
         self.tlVar = IntVar()
 
 
         # VISUAL REFERENCES FRAME
 
-        self.visual_reference_label_frame = LabelFrame(self.Segmentation_Window, text='Visual References')
-        self.visual_reference_label_frame.grid(row=0,columnspan=3, padx=2, pady=5,sticky="ew")
+        self.binarisation_frame = LabelFrame(self.Segmentation_Window, text='Visual References')
+        self.binarisation_frame.grid(row=0, columnspan=3, padx=2, pady=5, sticky="ew")
 
-        self.RL_Label = Label(self.visual_reference_label_frame, text="RL Image")
+        self.RL_Label = Label(self.binarisation_frame, text="RL Image")
         self.RL_Label.grid(column=0, row=0)
         # self.RLPath.set('/home/matthew/Code/ZirconSeparation/test/images/88411_spots_p1_RL__WqO4ozqE.png')
 
-        self.RLTextBox = Entry(self.visual_reference_label_frame, width=150, textvariable=self.RLPath)
+        self.RLTextBox = Entry(self.binarisation_frame, width=150, textvariable=self.RLPath)
         self.RLTextBox.grid(column=1, row=0)
-        self.browseRL = Button(self.visual_reference_label_frame, text="...", width=5, command=lambda: self.Browse('RL'))
+        self.browseRL = Button(self.binarisation_frame, text="...", width=5, command=lambda: self.Browse('RL'))
         self.browseRL.grid(column=3, row=0, padx=2, pady=5)
 
-        self.rlCheckButton = Checkbutton(self.visual_reference_label_frame, text='Binarise  RL', variable=self.rlVar)
+        self.rlCheckButton = Checkbutton(self.binarisation_frame, text='Binarise  RL', variable=self.rlVar)
         self.rlCheckButton.grid(column=4, row=0, padx=2, pady=5)
-        self.Display_RL_Image_Button = Button(self.visual_reference_label_frame, text="Display", width=8, command=lambda: self.display_image(ImageType.RL))
+        self.Display_RL_Image_Button = Button(self.binarisation_frame, text="Display", width=8, command=lambda: self.display_image(ImageType.RL))
         self.Display_RL_Image_Button.grid(column=5, row=0, padx=2, pady=5)
 
-        self.TL_Label = Label(self.visual_reference_label_frame, text="TL Image")
+        self.TL_Label = Label(self.binarisation_frame, text="TL Image")
         self.TL_Label.grid(column=0, row=1)
 
-        self.TLTextBox = Entry(self.visual_reference_label_frame, width=150, textvariable=self.TLPath)
+        self.TLTextBox = Entry(self.binarisation_frame, width=150, textvariable=self.TLPath)
         self.TLTextBox.grid(column=1, row=1)
-        self.browseTL = Button(self.visual_reference_label_frame, text="...", width=5, command=lambda: self.Browse('TL'))
+        self.browseTL = Button(self.binarisation_frame, text="...", width=5, command=lambda: self.Browse('TL'))
         self.browseTL.grid(column=3, row=1, padx=2, pady=5)
 
-        self.tlCheckButton = Checkbutton(self.visual_reference_label_frame, text='Binarise TL', variable=self.tlVar)
+        self.tlCheckButton = Checkbutton(self.binarisation_frame, text='Binarise TL', variable=self.tlVar)
         self.tlCheckButton.grid(column=4, row=1, padx=2, pady=5)
-        self.Display_TL_Image_Button = Button(self.visual_reference_label_frame, text="Display", width=8,
+        self.Display_TL_Image_Button = Button(self.binarisation_frame, text="Display", width=8,
                                               command=lambda: self.display_image(ImageType.TL))
         self.Display_TL_Image_Button.grid(column=5, row=1, padx=2, pady=5)
 
-        self.BinariseButton = Button(self.visual_reference_label_frame, text="Binarise", command=self.binarise_images)
+        self.BinariseButton = Button(self.binarisation_frame, text="Binarise", command=self.binarise_images)
         self.BinariseButton.grid(column=0, row=2, padx=2, pady=5)
 
-        # SEGMENTATION FRAME
+        self.saveMask = Button(self.binarisation_frame, text="Save Mask", width = 10, command=lambda: self.save_mask())
+        self.saveMask.grid(column=1, row=2, padx=2, pady=5,sticky='w')
+
+        #EDIT BOUNDARIES FRAME
         self.segmentation_label_frame = LabelFrame(self.Segmentation_Window, text='Image Segmentation')
         self.segmentation_label_frame.grid(columnspan=3,row=1, padx=2, pady=5,sticky="ew")
 
@@ -93,28 +96,16 @@ class SegmentationDialog():
         self.saveChanges = Button(self.segmentation_label_frame, text="Save Changes", command=self.view.SaveBreakChanges)
         self.saveChanges.grid(column=2, row=0, padx=2, pady=5)
 
-        #EDIT BOUNDARIES FRAME
-        self.edit_boundaries_label_frame = LabelFrame(self.Segmentation_Window, text='Edit Grain Boundaries')
-        self.edit_boundaries_label_frame.grid(columnspan=3,row=2, padx=2, pady=5,sticky="ew")
+        self.grain_boundary_capture = Button(self.segmentation_label_frame, text="Grain Boundary Capture [p]", command=self.view.drawing.BoundaryDraw)
+        self.grain_boundary_capture.grid(column=3, row=0, padx=2, pady=5)
 
-        self.grain_boundary_capture = Button(self.edit_boundaries_label_frame, text="Grain Boundary Capture [p]", command=self.view.drawing.BoundaryDraw)
-        self.grain_boundary_capture.grid(column=0, row=0, padx=2, pady=5)
-
-        self.undo_delete = Button(self.edit_boundaries_label_frame, text="Undo Delete Contour", command=self.view.undo_delete_contour)
-        self.undo_delete.grid(column=1, row=0, padx=2, pady=5)
+        self.undo_delete = Button(self.segmentation_label_frame, text="Undo Delete Contour", command=self.view.undo_delete_contour)
+        self.undo_delete.grid(column=4, row=0, padx=2, pady=5)
 
         #MEASURE SHAPES FRAME
         self.Measure_Shapes_Frame = LabelFrame(self.Segmentation_Window, text='Measure Shapes')
         self.Measure_Shapes_Frame.grid(columnspan=3, row=3, padx=2, pady=5,sticky="ew")
 
-        self.Mask_Label = Label(self.Measure_Shapes_Frame, text="Mask Save Location")
-        self.Mask_Label.grid(column=0, row=0,sticky='w')
-
-        self.browseMask = Button(self.Measure_Shapes_Frame, text="...", width=5, command=lambda: self.Browse('Mask'))
-        self.browseMask.grid(column=2, row=0, padx=2, pady=5,sticky='w')
-
-        self.saveMask = Button(self.Measure_Shapes_Frame, text="Save Mask", width = 10,command=lambda: self.save_mask())
-        self.saveMask.grid(column=3, row=0, padx=2, pady=5,sticky='w')
 
         self.Process_Image = Label(self.Measure_Shapes_Frame, text="Browse for Mask Image")
         self.Process_Image.grid(column=0, row=1,sticky='w')
@@ -137,7 +128,7 @@ class SegmentationDialog():
         self.Browse_Folder = Button(self.Measure_Shapes_Frame, text="...", width=5, command=lambda: self.Browse('Folder'))
         self.Browse_Folder.grid(column=2, row=2, padx=3, pady=5,sticky='w')
 
-        self.Process_Folder = Button(self.Measure_Shapes_Frame, text="Process Folder", width=20, command=lambda: self.model.ProcessFolder())
+        self.Process_Folder = Button(self.Measure_Shapes_Frame, text="Process Folder", width=20, command=lambda: self.process_mask_folder)
         self.Process_Folder.grid(column=3, row=2, padx=3, pady=5,sticky='w')
 
         self.measureShapes = Button(self.Measure_Shapes_Frame, text="Measure Shapes", command=self.measure_shapes)
@@ -146,18 +137,11 @@ class SegmentationDialog():
         self.moveSpot = Button(self.Measure_Shapes_Frame, text="Reposition spot", command=self.view.drawing.PointMove)
         self.moveSpot.grid(column=1, row=3, padx=2, pady=5, sticky='w')
 
-        # SAVE RESULTS FRAME
-        self.Save_Results_Frame = LabelFrame(self.Segmentation_Window, text='Measure Shapes')
-        self.Save_Results_Frame.grid(columnspan=3, row=4, padx=2, pady=5,sticky="ew")
-
-        self.pushDB = Button(self.Save_Results_Frame, text="Push to DB", command=self.view.model.push_shape_measurements_to_database)
-        self.pushDB.grid(column=0, row=0, padx=2, pady=5)
-
-        self.write_to_csv_button = Button(self.Save_Results_Frame, text="Save to CSV", command=self.view.model.write_to_csv)
-        self.write_to_csv_button.grid(column=1, row=0, padx=2, pady=5)
+    def process_mask_folder(self):
+        mask_file_folder = self.Mask_Folder_Location.get()
+        self.view.process_all_masks_in_folder(mask_file_folder)
 
     def binarise_images(self):
-
         RLPath = self.RLPath.get()
         TLPath = self.TLPath.get()
         rlVar = self.rlVar.get()
@@ -166,7 +150,7 @@ class SegmentationDialog():
 
     def display_image(self, image_type):
         image = self.view.model.set_current_image(image_type)
-        self.view.drawing.display_image(image)
+        self.view.drawing.clear_canvas_and_display_image(image)
 
     def Browse(self,case_type):
 
@@ -175,10 +159,13 @@ class SegmentationDialog():
         if case_type == 'RL':
             self.RLPath.set(path)
             self.update_textbox(self.RLTextBox,path)
+            self.view.model.set_image_details(path, ImageType.RL)
 
         if case_type == 'TL':
             self.TLPath.set(path)
             self.update_textbox(self.TLTextBox, path)
+            self.view.model.set_image_details(path, ImageType.TL)
+
 
         if case_type == 'Mask':
             pass

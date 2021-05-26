@@ -131,10 +131,15 @@ def get_efd_parameters_for_simplified_contour(contour, has_parent, filter_fn, OR
     #else:
     #    factor = ORDER_FACTOR
 
+    number_of_points = len(contour)
+
     if len(contour)<50:
         ORDER_FACTOR= 1
+    elif len(contour) < 500:
+        ORDER_FACTOR=0.2
+    else:
+        ORDER_FACTOR=0.2
 
-    number_of_points = len(contour)
     order = int(number_of_points*ORDER_FACTOR)
     #reconstructed_points = simplify(contour, has_parent) ### for testing must remove
     if order ==0:
@@ -144,7 +149,7 @@ def get_efd_parameters_for_simplified_contour(contour, has_parent, filter_fn, OR
 
     coefficients = calcEFD(contour,order)
     locus = calculate_locus(contour)
-    reconstructed_points = pyefd.reconstruct_contour(coefficients, locus, number_of_points + 1).astype('int')  # simplify (contour,has_parent)
+    reconstructed_points = pyefd.reconstruct_contour(coefficients, locus, order + 1).astype('int')  # simplify (contour,has_parent)
     reconstructed_points_without_duplicates = remove_duplicate_points(reconstructed_points)
     if len(reconstructed_points_without_duplicates)<2:
         return None
@@ -496,7 +501,6 @@ def calculateK(con, coef):
         ddy = []
         n = 0
 
-
         for harmonic in coef:
             #print('harmonic: ', harmonic)
             n +=1
@@ -591,10 +595,10 @@ def IdentifyContactPoints(k_maxima_length_positions, k_maxima_values, k_maxima_x
 
     max_k = max(non_maxima_k,default = 0)
     maxima_to_remove = []
-    for k in k_maxima_values:
+    '''for k in k_maxima_values:
         if k < 1.5*max_k:
             iterator = k_maxima_values.index(k)
-            maxima_to_remove.append(iterator)
+            maxima_to_remove.append(iterator)'''
 
     contact_point_k_values = []
     contact_point_length_positions = []
