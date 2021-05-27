@@ -9,7 +9,7 @@ import tkinter as tk
 import cv2
 import matplotlib
 import numpy as np
-import pyodbc
+#import pyodbc
 import shapely
 # import skimage.segmentation because else it
 # says there's no segmentation module
@@ -772,64 +772,21 @@ class Model():
     def separate(self):
         def filter_polygon_by_area(contour):
             area = cv2.contourArea(contour, False)
-            return area>=50
+            return area >= 50
 
-        print(datetime.datetime.now())
         reconstructed_points = [] #for testing
         self.threshold = self.convert_contours_to_mask_image(self.height,self.width, self.contours_by_group_tag.values())
 
-        print(datetime.datetime.now())
         contours, hierarchy = cv2.findContours(self.threshold, cv2.RETR_TREE,cv2.CHAIN_APPROX_SIMPLE)  # get the new contours of the eroded masks
         hierarchy = np.squeeze(hierarchy)
 
-        print(datetime.datetime.now())
         composite_contour_list = []
-        for i in range(len(contours)):
-            cnt = np.squeeze(contours[i]).tolist()
-            composite_contour = CompositeContour(np.squeeze(contours[i]),i)
+        for i, contour in enumerate(contours):
+            composite_contour = ZirconSeparationUtils.calculate_curvature_and_find_maxima(i, contour, hierarchy, filter_polygon_by_area)
             composite_contour_list.append(composite_contour)
-
-            if hierarchy.ndim == 1:
-                composite_contour.has_parent = hierarchy[3] != -1
-            else:
-                composite_contour.has_parent = hierarchy[i][3] != -1
-
-            if len(cnt) < 3: #if it is a straight line or a point, it is not a closed contour and thus not of interest
-                composite_contour.keep_contour = False
-                continue
-
-            print(i, datetime.datetime.now())
-            get_coefficients_result = ZirconSeparationUtils.get_efd_parameters_for_simplified_contour(composite_contour.original_points, composite_contour.has_parent, filter_polygon_by_area)
-            print(i, datetime.datetime.now())
-            if get_coefficients_result is None:
-                composite_contour.keep_contour = False
-                continue
-            composite_contour.coefficients, composite_contour.locus, composite_contour.reconstructed_points = get_coefficients_result
-
-            composite_contour.curvature_values, composite_contour.cumulative_distance = ZirconSeparationUtils.calculateK(composite_contour.reconstructed_points, composite_contour.coefficients) #composite_contour.reconstructed_points
-            print(i, datetime.datetime.now())
-            curvature_maxima_length_positions, curvature_maxima_values, curvature_maxima_x, curvature_maxima_y, non_maxima_curvature = ZirconSeparationUtils.FindCurvatureMaxima(composite_contour.curvature_values,composite_contour.cumulative_distance,composite_contour.reconstructed_points)
-            print(i, datetime.datetime.now())
-            node_curvature_values, node_distance_values, node_x, node_y = ZirconSeparationUtils.IdentifyContactPoints(curvature_maxima_length_positions, curvature_maxima_values, curvature_maxima_x, curvature_maxima_y, non_maxima_curvature)
-            print(i, datetime.datetime.now())
-
-            if node_curvature_values != []:
-                composite_contour.max_curvature_values = node_curvature_values
-                composite_contour.max_curvature_distance = node_distance_values
-                #create_curvature_distance_plot(composite_contour)
-            else:
-                composite_contour.keep_contour = False
-
-            if node_x !=[] and node_y !=[]:
-                composite_contour.max_curvature_coordinates = list(zip(node_x,node_y))
-            else:
-                composite_contour.keep_contour = False
-
-        print(datetime.datetime.now())
 
         groups = ZirconSeparationUtils.FindNestedContours(hierarchy)
 
-        print(datetime.datetime.now())
         if self.tl_path != '':
             image_to_show = self.tl_image
             is_image_binary = False

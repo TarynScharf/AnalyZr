@@ -18,6 +18,7 @@ from skimage.measure import label
 from statistics import mean
 
 from src.model import FileUtils
+from src.model.composite_contour import CompositeContour
 from src.model.json_data import JsonData
 
 
@@ -132,13 +133,8 @@ def get_efd_parameters_for_simplified_contour(contour, has_parent, filter_fn, OR
     #    factor = ORDER_FACTOR
 
     number_of_points = len(contour)
-
-    if len(contour)<50:
+    if len(contour) < 50:
         ORDER_FACTOR= 1
-    elif len(contour) < 500:
-        ORDER_FACTOR=0.2
-    else:
-        ORDER_FACTOR=0.2
 
     order = int(number_of_points*ORDER_FACTOR)
     #reconstructed_points = simplify(contour, has_parent) ### for testing must remove
@@ -147,9 +143,11 @@ def get_efd_parameters_for_simplified_contour(contour, has_parent, filter_fn, OR
     if filter_fn is not None and not filter_fn(contour):
         return None
 
-    coefficients = calcEFD(contour,order)
+    input_contour = ensure_contour_is_closed(contour)
+
+    coefficients = pyefd.elliptic_fourier_descriptors(input_contour,order)
     locus = calculate_locus(contour)
-    reconstructed_points = pyefd.reconstruct_contour(coefficients, locus, order + 1).astype('int')  # simplify (contour,has_parent)
+    reconstructed_points = pyefd.reconstruct_contour(coefficients, locus, number_of_points) # simplify (contour,has_parent)
     reconstructed_points_without_duplicates = remove_duplicate_points(reconstructed_points)
     if len(reconstructed_points_without_duplicates)<2:
         return None
@@ -282,7 +280,6 @@ def determineQuadrant(point, contour):
     return quadrant
  
 def linkNodes(contour_group):
-
     usedNodes=[]
     distList = []
     nearestList=[]
@@ -420,7 +417,10 @@ def linkNodes(contour_group):
 
     return nearestList
 
-def close_contour(contour):
+def ensure_contour_is_closed(contour):
+    if contour[0][0] == contour[-1][0] and contour[0][1] == contour[-1][1]:
+        return contour
+
     contour_copy = np.copy(contour)
     closed_contour = np.insert(contour_copy, len(contour_copy), contour_copy[0], 0)
     return closed_contour
@@ -433,7 +433,7 @@ def calculate_locus(contour):
     :rtype: tuple
 
     """
-    contour = close_contour(contour)
+    contour = ensure_contour_is_closed(contour)
     dxy = np.diff(contour, axis=0)
     dt = np.sqrt((dxy ** 2).sum(axis=1))
     t = np.concatenate([([0.]), np.cumsum(dt)])
@@ -449,7 +449,7 @@ def calculate_locus(contour):
     return contour[0, 0] + A0, contour[0, 1] + C0
 
 def calcEFD(contour, order):
-    input_contour = close_contour(contour)
+    input_contour = ensure_contour_is_closed(contour)
     dxy = np.diff(input_contour,axis=0)  # get the incremental difference between each x and y for each point in the contour. If the contour isn't simplified, this looks to be a pixel-by-pixel change in X and Y.
     dt = np.sqrt((dxy ** 2).sum(axis=1))  # at each increment, calculate displacement, like pythagoras theorem
     t = np.cumsum(dt)
@@ -459,10 +459,8 @@ def calcEFD(contour, order):
     orders = np.arange(1, order + 1)
     consts = T / (2 * orders * orders * np.pi * np.pi)
     phi = phi * orders.reshape((order, -1))
-    d_cos_phi = np.cos(phi) - np.cos(np.roll(phi, 1,
-                                             axis=1))  # why does first cos term consider all phi, including the leading zero, but second cos cuts off the leading zero?
-    d_sin_phi = np.sin(phi) - np.sin(np.roll(phi, 1,
-                                             axis=1))  # why does first sin term consider all phi, including the leading zero, but second sin cuts off the leading zero?
+    d_cos_phi = np.cos(phi) - np.cos(np.roll(phi, 1, axis=1))
+    d_sin_phi = np.sin(phi) - np.sin(np.roll(phi, 1, axis=1))
 
     a = consts * np.sum((dxy[:, 0] / dt) * d_cos_phi, axis=1)
     b = consts * np.sum((dxy[:, 0] / dt) * d_sin_phi, axis=1)
@@ -480,66 +478,109 @@ def calcEFD(contour, order):
     )
     return coeffs
 
+
+def calculate_curvature_and_find_maxima(i, contour, hierarchy, polygon_filter):
+    cnt = np.squeeze(contour).tolist()
+    composite_contour = CompositeContour(np.squeeze(contour), i)
+
+    if hierarchy.ndim == 1:
+        composite_contour.has_parent = hierarchy[3] != -1
+    else:
+        composite_contour.has_parent = hierarchy[i][3] != -1
+
+    if len(cnt) < 3:  # if it is a straight line or a point, it is not a closed contour and thus not of interest
+        composite_contour.keep_contour = False
+        return composite_contour
+
+    get_coefficients_result = get_efd_parameters_for_simplified_contour(composite_contour.original_points, composite_contour.has_parent, polygon_filter)
+
+    if get_coefficients_result is None:
+        composite_contour.keep_contour = False
+        return composite_contour
+
+    composite_contour.coefficients, composite_contour.locus, composite_contour.reconstructed_points = get_coefficients_result
+
+    composite_contour.curvature_values= calculate_angle(composite_contour.reconstructed_points)
+
+    curvature_maxima_values, curvature_maxima_x, curvature_maxima_y, non_maxima_curvature = FindCurvatureMaxima(
+        composite_contour.curvature_values, composite_contour.cumulative_distance,
+        composite_contour.reconstructed_points)
+    node_curvature_values, node_x, node_y = IdentifyContactPoints(
+        curvature_maxima_values, curvature_maxima_x, curvature_maxima_y, non_maxima_curvature)
+
+    if node_curvature_values != []:
+        composite_contour.max_curvature_values = node_curvature_values
+    else:
+        composite_contour.keep_contour = False
+
+    if node_x != [] and node_y != []:
+        composite_contour.max_curvature_coordinates = list(zip(node_x, node_y))
+    else:
+        composite_contour.keep_contour = False
+
+    return composite_contour
+
+def calculate_angle(contour):
+    v1 = contour - np.roll(contour, shift=1, axis=0)
+    v2 = np.roll(contour, shift=-1, axis=0) - contour
+
+    thetas = []
+    for i, (s1, s2) in enumerate(zip(v1,v2)):
+        dot = np.dot(s1, s2)
+        cross = np.cross(s1, s2)
+        theta = np.arctan2(cross, dot)*180/np.pi
+        thetas.append(theta)
+    return thetas
+
 def calculateK(con, coef):
-    input_contour = np.insert(con, len(con), con[0], 0)
+    """
+    Note this has a subtle bug in it, where the K value sometimes gets shifted
+    for long contours. Despite > 10 hours work we've been unable to track down
+    why this occurs.
+    """
+    input_contour = ensure_contour_is_closed(con)
     dxy = np.diff(input_contour, axis=0)  # get the incremental difference between each x and y for each point in the contour. If the contour isn't simplified, this looks to be a pixel-by-pixel change in X and Y.
     dt = np.sqrt((dxy ** 2).sum(axis=1))  # at each increment, calculate displacement, like pythagoras theorem
     t = np.cumsum(dt)
-    t = np.roll(t, shift=1)
     T = t[-1]  # total  displacement is the last cumulative value in t
+    t = np.roll(t, shift=1)
 
-    pi = np.pi #pi = 180 degrees
-    T_radians = pi*2
-    r = (np.pi*2)/T #radian equivalent of one unit of contour length
-    t_radians = r*t
     all_K = []
-    
+
+    orders = np.arange(1, len(coef) + 1)
+    d_theta = 2 * np.pi * orders / T
+
     for cumulative_displacement in t:
-        dx = []
-        dy = []
-        ddx = []
-        ddy = []
-        n = 0
+        theta = d_theta * cumulative_displacement
+        sin_theta = np.sin(theta)
+        cos_theta = np.cos(theta)
+        sin_theta_d_theta = sin_theta * d_theta
+        cos_theta_d_theta = cos_theta * d_theta
+        sin_theta_d_theta_sq = sin_theta_d_theta * d_theta
+        cos_theta_d_theta_sq = cos_theta_d_theta * d_theta
 
-        for harmonic in coef:
-            #print('harmonic: ', harmonic)
-            n +=1
+        a = coef[:,0]
+        b = coef[:,1]
+        c = coef[:,2]
+        d = coef[:,3]
 
-            d_theta = (2 * pi * n) / T
-            theta = (2 * pi * n * cumulative_displacement) / T
-            sin_theta = np.sin(theta)
-            cos_theta = np.cos(theta)
+        dxs = -a*sin_theta_d_theta + b*cos_theta_d_theta
+        dys = -c*sin_theta_d_theta + d*cos_theta_d_theta
+        ddxs = -a * cos_theta_d_theta_sq - b * sin_theta_d_theta_sq
+        ddys = -c * cos_theta_d_theta_sq - d * sin_theta_d_theta_sq
 
-            a = harmonic[0]
-            b = harmonic[1]
-            c = harmonic[2]
-            d = harmonic[3] 
-
-            dx_per_harmonic = -a*sin_theta*d_theta + b*cos_theta*d_theta
-            dy_per_harmonic = -c*sin_theta*d_theta + d*cos_theta*d_theta
-            ddx_per_harmonic = -a*cos_theta*(d_theta**2) - b*sin_theta*(d_theta**2)
-            ddy_per_harmonic = -c*cos_theta*(d_theta**2) - d*sin_theta*(d_theta**2)
-            
-            dx.append(dx_per_harmonic)
-            dy.append(dy_per_harmonic)
-            ddx.append(ddx_per_harmonic)
-            ddy.append(ddy_per_harmonic)
-        
-        sum_dx = np.sum(dx)
-        sum_dy = np.sum(dy)
-        sum_ddx = np.sum(ddx)
-        sum_ddy = np.sum(ddy)
-        
+        sum_dx = np.sum(dxs)
+        sum_dy = np.sum(dys)
+        sum_ddx = np.sum(ddxs)
+        sum_ddy = np.sum(ddys)
         K = ((sum_ddy*sum_dx) - (sum_dy*sum_ddx))/((sum_dx**2 +sum_dy**2)**(3/2))
         all_K.append(K)
 
-
-    return all_K,  t_radians
+    return all_K
 
 def FindCurvatureMaxima(curvature_values,cumulative_distance,contour_points):
     #plot(contour1 = contour_points)
     k_maxima_values = []
-    k_maxima_length_positions = []
     k_maxima_x = []
     k_maxima_y = []
     non_maxima_k = []
@@ -569,7 +610,6 @@ def FindCurvatureMaxima(curvature_values,cumulative_distance,contour_points):
                     #point_test = [[contour_points[i][0],contour_points[i][1]]]
                     #plot(point_test)
                     if abs(thisK) >= abs_percentile and thisK > percentile:
-                        k_maxima_length_positions.append(cumulative_distance[i]) #get the cumulative distance along the contour at which the k occurs
                         k_maxima_values.append(thisK)  #get the k maxima
                         k_maxima_x.append(contour_points[i][0])  # get the x value associated with the k
                         k_maxima_y.append(contour_points[i][1])  # get the y value associated with the k
@@ -578,7 +618,6 @@ def FindCurvatureMaxima(curvature_values,cumulative_distance,contour_points):
                         non_maxima_k.append(thisK)  # all k values that aren't maxima
                 elif thisK==prevK and prevK>prev2K:
                     if abs(thisK) >= abs_percentile and thisK > percentile:
-                        k_maxima_length_positions.append(cumulative_distance[i]) #get the cumulative distance along the contour at which the k occurs
                         k_maxima_values.append(thisK)  #get the k maxima
                         k_maxima_x.append(contour_points[i][0])  # get the x value associated with the k
                         k_maxima_y.append(contour_points[i][1])  # get the y value associated with the k
@@ -587,33 +626,29 @@ def FindCurvatureMaxima(curvature_values,cumulative_distance,contour_points):
                         non_maxima_k.append(thisK)  # all k values that aren't maxima
 
     #plot(test_plot_points)
-    return k_maxima_length_positions, k_maxima_values, k_maxima_x, k_maxima_y, non_maxima_k
+    return k_maxima_values, k_maxima_x, k_maxima_y, non_maxima_k
 
-def IdentifyContactPoints(k_maxima_length_positions, k_maxima_values, k_maxima_x, k_maxima_y, non_maxima_k):
+def IdentifyContactPoints(k_maxima_values, k_maxima_x, k_maxima_y, non_maxima_k):
     #k = curvature
 
     max_k = max(non_maxima_k,default = 0)
     maxima_to_remove = []
-    '''for k in k_maxima_values:
+    for k in k_maxima_values:
         if k < 1.5*max_k:
             iterator = k_maxima_values.index(k)
-            maxima_to_remove.append(iterator)'''
+            maxima_to_remove.append(iterator)
 
     contact_point_k_values = []
-    contact_point_length_positions = []
     contact_point_x = []
     contact_point_y = []
 
     for i in range(len(k_maxima_y)):
-        if i in maxima_to_remove:
-            pass
-        else:
+        if i not in maxima_to_remove:
             contact_point_k_values.append(k_maxima_values[i])
-            contact_point_length_positions.append(k_maxima_length_positions[i])
             contact_point_x.append(k_maxima_x[i])
             contact_point_y.append(k_maxima_y[i])
 
-    return contact_point_k_values, contact_point_length_positions, contact_point_x, contact_point_y
+    return contact_point_k_values, contact_point_x, contact_point_y
 
 def FindNestedContours(hierarchy):
     #groups contours together according to their nested structures.
