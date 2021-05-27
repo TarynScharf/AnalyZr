@@ -58,7 +58,7 @@ class SegmentationDialog():
         self.browseRL = Button(self.binarisation_frame, text="...", width=5, command=lambda: self.Browse('RL'))
         self.browseRL.grid(column=3, row=0, padx=2, pady=5)
 
-        self.rlCheckButton = Checkbutton(self.binarisation_frame, text='Binarise  RL', variable=self.rlVar)
+        self.rlCheckButton = Checkbutton(self.binarisation_frame, text='Binarise  RL', variable=self.rlVar, command = self.update_binarisation_button_availability)
         self.rlCheckButton.grid(column=4, row=0, padx=2, pady=5)
         self.Display_RL_Image_Button = Button(self.binarisation_frame, text="Display", width=8, command=lambda: self.display_image(ImageType.RL))
         self.Display_RL_Image_Button.grid(column=5, row=0, padx=2, pady=5)
@@ -71,16 +71,18 @@ class SegmentationDialog():
         self.browseTL = Button(self.binarisation_frame, text="...", width=5, command=lambda: self.Browse('TL'))
         self.browseTL.grid(column=3, row=1, padx=2, pady=5)
 
-        self.tlCheckButton = Checkbutton(self.binarisation_frame, text='Binarise TL', variable=self.tlVar)
+        self.tlCheckButton = Checkbutton(self.binarisation_frame, text='Binarise TL', variable=self.tlVar,command = self.update_binarisation_button_availability)
         self.tlCheckButton.grid(column=4, row=1, padx=2, pady=5)
         self.Display_TL_Image_Button = Button(self.binarisation_frame, text="Display", width=8,
                                               command=lambda: self.display_image(ImageType.TL))
         self.Display_TL_Image_Button.grid(column=5, row=1, padx=2, pady=5)
 
         self.BinariseButton = Button(self.binarisation_frame, text="Binarise", command=self.binarise_images)
+        self.BinariseButton.config(state=DISABLED)
         self.BinariseButton.grid(column=0, row=2, padx=2, pady=5)
 
         self.saveMask = Button(self.binarisation_frame, text="Save Mask", width = 10, command=lambda: self.save_mask())
+        self.saveMask.config(state=DISABLED)
         self.saveMask.grid(column=1, row=2, padx=2, pady=5,sticky='w')
 
         #EDIT BOUNDARIES FRAME
@@ -88,24 +90,28 @@ class SegmentationDialog():
         self.segmentation_label_frame.grid(columnspan=3,row=1, padx=2, pady=5,sticky="ew")
 
         self.Separate_Button = Button(self.segmentation_label_frame, text="Separate Grains", command=self.view.separate)
+        self.Separate_Button.config(state=DISABLED)
         self.Separate_Button.grid(column=0, row=0, padx=2, pady=5)
 
         self.breakLine = Button(self.segmentation_label_frame, text="Draw Break Line", command=self.view.drawing.DrawBreakLine)
+        self.breakLine.config(state=DISABLED)
         self.breakLine.grid(column=1, row=0, padx=2, pady=5)
 
         self.saveChanges = Button(self.segmentation_label_frame, text="Save Changes", command=self.view.SaveBreakChanges)
+        self.saveChanges.config(state=DISABLED)
         self.saveChanges.grid(column=2, row=0, padx=2, pady=5)
 
         self.grain_boundary_capture = Button(self.segmentation_label_frame, text="Grain Boundary Capture [p]", command=self.view.drawing.BoundaryDraw)
+        self.grain_boundary_capture.config(state = DISABLED)
         self.grain_boundary_capture.grid(column=3, row=0, padx=2, pady=5)
 
         self.undo_delete = Button(self.segmentation_label_frame, text="Undo Delete Contour", command=self.view.undo_delete_contour)
+        self.undo_delete.config(state=DISABLED)
         self.undo_delete.grid(column=4, row=0, padx=2, pady=5)
 
         #MEASURE SHAPES FRAME
         self.Measure_Shapes_Frame = LabelFrame(self.Segmentation_Window, text='Measure Shapes')
         self.Measure_Shapes_Frame.grid(columnspan=3, row=3, padx=2, pady=5,sticky="ew")
-
 
         self.Process_Image = Label(self.Measure_Shapes_Frame, text="Browse for Mask Image")
         self.Process_Image.grid(column=0, row=1,sticky='w')
@@ -132,10 +138,18 @@ class SegmentationDialog():
         self.Process_Folder.grid(column=3, row=2, padx=3, pady=5,sticky='w')
 
         self.measureShapes = Button(self.Measure_Shapes_Frame, text="Measure Shapes", command=self.measure_shapes)
+        self.measureShapes.config(state=DISABLED)
         self.measureShapes.grid(column=0, row=3, padx=2, pady=5,sticky='w')
 
         self.moveSpot = Button(self.Measure_Shapes_Frame, text="Reposition spot", command=self.view.drawing.PointMove)
+        self.moveSpot.config(state=DISABLED)
         self.moveSpot.grid(column=1, row=3, padx=2, pady=5, sticky='w')
+
+    def update_binarisation_button_availability(self):
+        if self.rlVar.get() == 1 or self.tlVar.get() == 1:
+            self.BinariseButton.config(state = NORMAL)
+        else:
+            self.BinariseButton.config(state=DISABLED)
 
     def process_mask_folder(self):
         mask_file_folder = self.Mask_Folder_Location.get()
@@ -147,10 +161,17 @@ class SegmentationDialog():
         rlVar = self.rlVar.get()
         tlVar = self.tlVar.get()
         self.view.binariseImages(RLPath, TLPath, rlVar, tlVar)
+        self.saveMask.config(state=NORMAL)
+        self.Separate_Button.config(state=NORMAL)
+        self.breakLine.config(state=NORMAL)
+        self.saveChanges.config(state=NORMAL)
+        self.grain_boundary_capture.config(state=NORMAL)
+        self.undo_delete.config(state=NORMAL)
+        self.measureShapes.config(state=NORMAL)
 
     def display_image(self, image_type):
         image = self.view.model.set_current_image(image_type)
-        self.view.drawing.clear_canvas_and_display_image(image)
+        self.view.drawing.display_image(image)
 
     def Browse(self,case_type):
 
@@ -166,29 +187,49 @@ class SegmentationDialog():
             self.update_textbox(self.TLTextBox, path)
             self.view.model.set_image_details(path, ImageType.TL)
 
-
         if case_type == 'Mask':
-            pass
+            self.mask_file_path.set(path)
+            self.update_textbox(self.mask_filepath_textbox,path)
+            self.view.model.set_image_details(path, ImageType.MASK)
+            self.measureShapes.config(state=NORMAL)
+            self.saveMask.config(state=NORMAL)
+            self.Separate_Button.config(state=NORMAL)
+            self.breakLine.config(state=NORMAL)
+            self.saveChanges.config(state=NORMAL)
+            self.grain_boundary_capture.config(state=NORMAL)
+            self.undo_delete.config(state=NORMAL)
+            self.measureShapes.config(state=NORMAL)
 
         elif case_type == 'Folder':
             self.Folder_Location.set(path)
             self.update_textbox(self.Folder_TextBox, path)
+            self.measureShapes.config(state=NORMAL)
 
         elif case_type == 'File':
             self.mask_file_path.set(path)
             self.update_textbox(self.mask_filepath_textbox, path)
+            self.measureShapes.config(state=NORMAL)
+            self.saveMask.config(state=NORMAL)
+            self.Separate_Button.config(state=NORMAL)
+            self.breakLine.config(state=NORMAL)
+            self.saveChanges.config(state=NORMAL)
+            self.grain_boundary_capture.config(state=NORMAL)
+            self.undo_delete.config(state=NORMAL)
+            self.measureShapes.config(state=NORMAL)
 
         return path
 
     def display_mask(self):
         self.view.DisplayMask(self.mask_file_path.get())
         self.update_textbox(self.mask_filepath_textbox, self.mask_file_path.get())
-        self.update_textbox(self.TLTextBox, self.view.model.rl_path)
-        self.update_textbox(self.RLTextBox, self.view.model.tl_path)
+        self.update_textbox(self.TLTextBox, self.view.model.tl_path)
+        self.update_textbox(self.RLTextBox, self.view.model.rl_path)
+        self.measureShapes.config(state=NORMAL)
 
     def measure_shapes(self):
         mask_path = self.mask_file_path.get()
         self.view.start_measure_shapes(mask_path)
+        self.moveSpot.config(state=NORMAL)
 
     def update_textbox(self, textbox, text_string):
         textbox.delete(0,END)
