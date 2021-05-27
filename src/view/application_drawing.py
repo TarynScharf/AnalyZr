@@ -307,6 +307,8 @@ class Drawing():
                 continue
             x, y = zip(*contour.reconstructed_points)
             plt.scatter(x, y, c=contour.curvature_values, vmin=-1, vmax=1, s=5)
+            #for i, label in enumerate(contour.curvature_values):
+            #    plt.annotate(str(round(label,2)), (x[i], y[i]), fontsize='small')
             xmax,ymax = zip(*contour.max_curvature_coordinates)
             #for i in range (len(xmax)):
             #    text= str(xmax[i])+" | "+str(ymax[i])
