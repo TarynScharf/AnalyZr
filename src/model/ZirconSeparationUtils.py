@@ -515,7 +515,6 @@ def calculateK(con, coef):
             c = harmonic[2]
             d = harmonic[3] 
 
-            
             dx_per_harmonic = -a*sin_theta*d_theta + b*cos_theta*d_theta
             dy_per_harmonic = -c*sin_theta*d_theta + d*cos_theta*d_theta
             ddx_per_harmonic = -a*cos_theta*(d_theta**2) - b*sin_theta*(d_theta**2)

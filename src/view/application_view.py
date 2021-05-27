@@ -6,8 +6,6 @@ from tkinter.ttk import *
 
 import os
 
-from src.model.drawing_objects.breakline import Breakline
-from src.model.image_data import ImageData
 from src.view.application_drawing import Drawing
 from src.view.data_capture_dialog import DataCaptureDialog
 from src.view.measurement_table_dialog import MeasurementDialog
@@ -16,10 +14,8 @@ from src.view.segmentation_dialog import SegmentationDialog
 os.environ["OPENCV_IO_MAX_IMAGE_PIXELS"] = pow(2,40).__str__()
 import matplotlib
 from PIL import Image
-from src.model.composite_contour import CompositeContour
 matplotlib.use('Agg')
 from src.model.ZirconSeparationUtils import *
-
 
 class DataCaptureWindow(object):
     pass
@@ -73,25 +69,6 @@ class View:
         self.myMenuFrame = tk.Frame(master, width=1600, height=30)
         self.myMenuFrame.pack(fill='both')
 
-        # Buttons
-        #self.browseButton = Button(self.myMenuFrame, text="Load Images", command=lambda: self.Browse('capture'))
-        #self.browseButton.grid(column=0, row=0, padx=5, pady=10)
-
-        #self.nextImageButton = Button(self.myMenuFrame, text="Next Image", command=self.NextImage)
-        #self.nextImageButton.grid(column=1, row=0, padx=5, pady=10)
-
-        #self.prevImageButton = Button(self.myMenuFrame, text="Previous Image", command=self.PrevImage)
-        #self.prevImageButton.grid(column=2, row=0, padx=5, pady=10)
-
-        #self.spotCaptureButton = Button(self.myMenuFrame, text="Spot Capture", command=self.PointDraw)
-        #self.spotCaptureButton.grid(column=3, row=0, padx=5, pady=10)
-
-        #self.sizeCaptureButton = Button(self.myMenuFrame, text="Size Capture", command=self.RectSpotDraw)
-        #self.sizeCaptureButton.grid(column=4, row=0, padx=5, pady=10)
-
-        #self.duplicateCaptureButton = Button(self.myMenuFrame, text="Mark Duplicate", command=self.DupDraw)
-        #self.duplicateCaptureButton.grid(column=5, row=0, padx=5, pady=10)
-
         # Image name, so  we know which image we're working on
         self.label = Label(self.myMenuFrame, text='')
         self.label.grid(column=1, row=0, padx=5, pady=10)
@@ -112,8 +89,8 @@ class View:
         master.bind("m", lambda e: self.drawing.PointMove())
         master.bind("l", lambda e: self.drawing.DrawScale())
 
-
     def open_segmentation_toolbox_dialog(self):
+        self.drawing.myCanvas.delete('all')
         SegmentationDialog(self)
 
     def exception_hook(self, exception_type, value, tb) -> None:
@@ -213,7 +190,7 @@ class View:
         has_images, missing_json_files = self.model.check_for_images_and_jsons(image_folder_path, json_folder_path, data_capture_image_type)
 
         if has_images == False:
-            error_message_text = "The folder contains no images for data capture."
+            error_message_text = f"The folder contains no png images of the type selected for data capture: {data_capture_image_type.value}."
             self.open_error_message_popup_window(error_message_text)
             return
 
@@ -282,46 +259,11 @@ class View:
         for spot in spotList:
             self.drawing.draw_interactive_spot(spot, 'green')
         MeasurementDialog(self,region_measurements)
-        #self.display_measurement_table(region_measurements)
-
-
-    def display_measurement_table(self,region_measurements):
-        '''
-        data = {'sampleid': sampleid_List,
-                'image_id': regionid_List,
-                'grain_number': label_List,
-                'grain_centroid': centroid_List,
-                'grainspot': spots_per_grain_List,
-                'area': area_List,
-                'equivalent_diameter': equivalent_diameter_List,
-                'perimeter': perimeter_List,
-                'minor_axis_length': minor_axis_length_List,
-                'major_axis_length': major_axis_length_List,
-                'solidity': solidity_List,
-                'convex_area': convex_area_List,
-                'formFactor': formFactor_List,
-                'roundness': roundness_List,
-                'compactness': compactness_List,
-                'aspectRatio': aspectRatio_List,
-                'minFeret': minFeret_List,
-                'maxFeret': maxFeret_List,
-                'contour': contour_List,
-                'image_dimensions': imDimensions_List,
-                'mask_image': maskImage_List
-                }
-        # Show me the table!
-        pd.set_option('display.max_rows', None)
-        pd.set_option('display.max_columns', None)
-        pd.set_option('display.width', None)
-        pd.set_option('display.max_colwidth', None)
-        dfShape = pd.DataFrame(data)
-        self.dfShapeRounded = dfShape.round(decimals=2)  # And I only want to see 2 decimal places
-        print(self.dfShapeRounded) '''
-
 
     def process_all_masks_in_folder(self, mask_file_folder):
         for path,folder,files in os.walk(mask_file_folder):
             for name in files:
+                extension = FileUtils.get_name_without_extension()
                 current_mask_file_path = os.path.join(mask_file_folder,name) #the file path of the current mask we're processing
                 self.DisplayMask(current_mask_file_path)
                 try:

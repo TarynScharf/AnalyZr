@@ -302,7 +302,7 @@ class Model():
     def set_json_folder_path(self,path):
         self.json_folder_path.set(path)
 
-    def load_mask_from_file(self, mask_path):
+    def load_mask_from_file(self, mask_path,image_type=ImageType.MASK):
         if mask_path == '':
             raise ValueError('No mask image has been selected')
 
@@ -316,12 +316,9 @@ class Model():
         self.threshold = cv2.imread(mask_path)[:, :, 0]
         self.threshold[self.threshold > 0] = 255
 
-        jsonName = '_'.join(mask_path.split('/')[-1].split('_')[:3]) + '.json'
-        sampleid = jsonName.split('_')[0]
-        if len(mask_path.split('/')[-1].split('_')) > 2:
-            regionID = mask_path.split('/')[-1].split('_')[-1].replace('.png', '')
-        else:
-            regionID = ""
+        jsonName = JsonData.get_json_file_name_from_path(image_type,mask_path)
+        sampleid = JsonData.get_sample_id_from_file_path(mask_path)
+        regionID = JsonData.get_region_id_from_file_path(image_type, mask_path)
 
         if self.json_folder_path is None:
             raise ValueError('No json folder path has been set')
@@ -367,6 +364,7 @@ class Model():
                     if not has_json:
                         json_path = os.path.join(path,name)
                         missing_json_files.append(json_path)
+
         return has_images, missing_json_files
 
     def does_json_exist(self, json_file):

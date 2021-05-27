@@ -167,7 +167,7 @@ class Drawing():
         tk_img = ImageTk.PhotoImage(image=image)
         self.myCanvas.configure(scrollregion=[0, 0, tk_img.width(), tk_img.height()])
         self.myCanvas.create_image(0, 0, image=tk_img, anchor=NW, tags="Image")
-        #self.myCanvas.tag_lower('Image')
+        self.myCanvas.tag_lower('Image')
         #This variable looks unused but must be kept so that the image is not garbage collected
         self.displayed_image  = tk_img
 
