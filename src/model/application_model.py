@@ -810,7 +810,7 @@ class Model():
                         #composite_contour_list.remove(contour)  # if it's added to a group to be processed, remove it from the main group so that we don't have to include it in future loops
             if contour_group == []:
                 continue
-            pairs = ZirconSeparationUtils.linkNodes(contour_group)
+            pairs = ZirconSeparationUtils.process_contour_group_for_node_pairs(contour_group)
             for ((x0,y0), (x1,y1)) in pairs:
                 breakline = Breakline(x0,y0,x1,y1,'line_' + str(count))
                 count += 1
