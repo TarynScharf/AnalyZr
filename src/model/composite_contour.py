@@ -11,4 +11,5 @@ class CompositeContour:
         self.index = index
         self.has_parent = None
         self.locus = None
+        self.max_bisectors = None
 
