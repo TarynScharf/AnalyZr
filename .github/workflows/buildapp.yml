@@ -1,0 +1,112 @@
+name: Build executables
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  create-release:
+    name: createrelease
+    runs-on: [ubuntu-latest]
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v1
+
+      - name: create release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.ref }}
+          release_name: Zircon Separation ${{ github.ref }}
+          draft: false
+          prerelease: false
+
+      - name: Output Release URL File
+        run: echo "${{ steps.create_release.outputs.upload_url }}" > release_url.txt
+
+      - name: Save Release URL File for publish
+        uses: actions/upload-artifact@v1
+        with:
+          name: release_url
+          path: release_url.txt
+
+
+  build-and-upload:
+    name: build and upload
+    needs: [create-release]
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest] # ${{ matrix.OS_NAME }}
+        include:
+          - os: macos-latest
+            OS_NAME: macOS
+            PYTHON_VERSION: 3.7
+            EXTENSION:
+            RESOURCES: resources:resources
+
+          - os: ubuntu-latest
+            OS_NAME: ubuntu
+            PYTHON_VERSION: 3.7
+            EXTENSION:
+            RESOURCES: resources:resources
+
+          - os: windows-latest
+            OS_NAME: windows
+            PYTHON_VERSION: 3.7
+            EXTENSION: .exe
+            RESOURCES: resources;resources
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v2
+
+      - name: Load release URL file from previous job
+        uses: actions/download-artifact@v1
+        with:
+          name: release_url
+
+      - name: Get upload URL
+        id: get_release_info
+        shell: bash
+        run: |
+          value=`cat release_url/release_url.txt`
+          echo ::set-output name=upload_url::$value
+
+      - name: Get the version
+        shell: bash
+        id: get_version
+        run: echo ::set-output name=version::${GITHUB_REF/refs\/tags\//}
+
+      - name: Set up Python
+        uses: actions/setup-python@v1
+        with:
+          python-version: ${{matrix.PYTHON_VERSION}}
+
+      - name: Install dependencies
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller==3.6
+
+      - name: Build with pyinstaller
+        shell: bash
+        run: |
+          pyinstaller --onefile --hidden-import='pkg_resources.py2_warn' --add-data '${{ matrix.RESOURCES }}' src/main.py
+        # --icon=./resources/icon.ico
+
+      - name: Upload release asset
+        id: upload-release-asset
+        uses: actions/upload-release-asset@v1.0.1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.get_release_info.outputs.upload_url }}
+          asset_path: ./dist/main${{matrix.EXTENSION}}
+          asset_name: ZirconSeparation-${{ steps.get_version.outputs.version }}-${{ matrix.OS_NAME }}${{matrix.EXTENSION}}
+          asset_content_type: application/zip
