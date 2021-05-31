@@ -36,11 +36,11 @@ class SegmentationDialog():
         self.RLPath = tk.StringVar()
         self.RLPath.set('')
         self.rlVar = IntVar()
-        self.RLPath.set('C:/Users/20023951/Documents/PhD/GSWA/Geochem_Interrogate/Inv1_Images/granite/189937_spots/Cropped/189937_spots_p2_RL_SO9e8wLIz.png')
+        #self.RLPath.set('C:/Users/20023951/Documents/PhD/GSWA/Geochem_Interrogate/Inv1_Images/granite/189937_spots/Cropped/189937_spots_p2_RL_SO9e8wLIz.png')
 
         self.TLPath = tk.StringVar()
         self.TLPath.set('')
-        self.TLPath.set('C:/Users/20023951/Documents/PhD/GSWA/Geochem_Interrogate/Inv1_Images/granite/189937_spots/Cropped/189937_spots_p2_TL_HQ1Cl19PT.png')
+        #self.TLPath.set('C:/Users/20023951/Documents/PhD/GSWA/Geochem_Interrogate/Inv1_Images/granite/189937_spots/Cropped/189937_spots_p2_TL_HQ1Cl19PT.png')
         self.tlVar = IntVar()
 
 
