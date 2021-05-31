@@ -91,7 +91,7 @@ jobs:
       - name: Build with pyinstaller
         shell: bash
         run: |
-          pyinstaller --onefile --hidden-import='pkg_resources.py2_warn' --hidden-import='skimage.fitlers.rank.core_cy_3d' src/main.py
+          pyinstaller --onefile --hidden-import='pkg_resources.py2_warn' --hidden-import='skimage.filters.rank.core_cy_3d' src/main.py
         # --icon=./resources/icon.ico
         # --add-data '${{ matrix.RESOURCES }}'
 
