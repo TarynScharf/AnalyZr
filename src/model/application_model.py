@@ -93,13 +93,9 @@ class Model():
 
         self.current_image_index = 0 #incrementor that keeps track of where we are in the list of images when displaying them for data capture
 
-    def DeleteObject(self, group_tag, coords):
+    def DeleteObject(self, group_tag):
         if 'line_' in group_tag: #breaklines don't get written to a json file
-            x1 = coords[0]
-            y1 = coords[1]
-            x2 = coords[2]
-            y2 = coords[3]
-            self.breaklines.remove([(x1, y1), (x2, y2)])
+            self.breaklines = [x for x in self.breaklines if x.group_tag != group_tag]
 
         elif 'contour_' in group_tag:
             self.delete_contour(group_tag)
@@ -782,7 +778,7 @@ class Model():
 
         composite_contour_list = []
         for i, contour in enumerate(contours):
-            composite_contour = ZirconSeparationUtils.calculate_curvature_and_find_maxima(i, contour, hierarchy, filter_polygon_by_area)
+            composite_contour = ZirconSeparationUtils.calculate_curvature_and_find_maxima(i, contour, hierarchy, filter_polygon_by_area,True)
             composite_contour_list.append(composite_contour)
 
         groups = ZirconSeparationUtils.FindNestedContours(hierarchy)

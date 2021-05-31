@@ -1,3 +1,5 @@
+from datetime import datetime
+
 import cv2
 import json
 import math
@@ -124,13 +126,11 @@ def simplify(poly,inside, reduction_factor = 1):
 
     return newPoints
 
-def get_efd_parameters_for_simplified_contour(contour, has_parent, filter_fn, ORDER_FACTOR =0.2):
+def get_efd_parameters_for_simplified_contour(contour, has_parent, filter_fn,simplify, ORDER_FACTOR =0.2):
+    assert not is_contour_closed(contour)
+
     #Takes an object of type CompositeContour. It uses the ComplexContour.original_points.
     #return: updated CompositeContour object
-    #if has_parent ==True:
-    ##    factor = 1
-    #else:
-    #    factor = ORDER_FACTOR
 
     number_of_points = len(contour)
     if len(contour) < 50:
@@ -147,23 +147,31 @@ def get_efd_parameters_for_simplified_contour(contour, has_parent, filter_fn, OR
 
     coefficients = pyefd.elliptic_fourier_descriptors(input_contour,order)
     locus = calculate_locus(contour)
-    reconstructed_points = pyefd.reconstruct_contour(coefficients, locus, number_of_points) # simplify (contour,has_parent)
+    if simplify == True:
+        reconstructed_points = pyefd.reconstruct_contour(coefficients, locus, number_of_points) # simplify (contour,has_parent)
+    else:
+        reconstructed_points = contour
     reconstructed_points_without_duplicates = remove_duplicate_points(reconstructed_points)
     if len(reconstructed_points_without_duplicates)<2:
         return None
 
-    return coefficients,locus, reconstructed_points_without_duplicates
+    assert not is_contour_closed(reconstructed_points_without_duplicates)
 
+    return coefficients,locus, reconstructed_points_without_duplicates
 
 def remove_duplicate_points(reconstructed_points):
     nonduplicate_points = []
-    prev_x = None
-    prev_y = None
+    prev= reconstructed_points[-1]
+    for point in reconstructed_points:
+        if not np.allclose(prev, point):
+            nonduplicate_points.append(point)
+        prev = point
+    '''prev_y = reconstructed_points[-1][1]
     for x,y in reconstructed_points:
         if x != prev_x or y != prev_y:
             nonduplicate_points.append((x,y))
         prev_x = x
-        prev_y = y
+        prev_y = y'''
 
     return nonduplicate_points
 
@@ -286,117 +294,137 @@ def calculate_theta(v1,v2):
     return theta
 
 def process_contour_group_for_node_pairs(contour_group):
+    usedNodes = set()
+    node_pairs = []
+    distList_for_child_contours =[]
 
-    if len(contour_group) > 1: #if it's a family of nested contours
-       distList, usedNodes = find_node_pairs_in_child_contours(contour_group)
-       distList, usedNodes = find_node_pairs_in_parent_contour(contour_group[0], usedNodes, distList)
+    if len(contour_group) > 1:
+        # if it's a family of nested contours, preferentially link nodes on child contours
+        distList_for_child_contours = find_node_pairs_in_child_contours(contour_group)
+        #link_nodes(distList_for_child_contours, contour_group,usedNodes,node_pairs)
 
-    if len(contour_group) ==1: #if the group  only contains 1 contour
-        distList, usedNodes = find_node_pairs_in_parent_contour(contour_group[0])
+    distList_parent_contours = find_node_pairs_in_parent_contour(contour_group[0],usedNodes)
+    distList = distList_for_child_contours + distList_parent_contours
 
-    distList = np.array(distList)
-    sortDistList = sorted(distList,key = lambda x:x[2],reverse = False)
-    nearestList = link_nodes(sortDistList, usedNodes, contour_group)
-    #nearestList = filter_pairs_with_length_to_volume_ratio(nearestList,contour_group)
+    link_nodes(distList, contour_group,usedNodes,node_pairs)
 
-    return nearestList
+    return node_pairs
 
-def find_node_pairs_in_child_contours(contour_group, used_nodes=[], internode_distance_list =[]):
-    for contour in contour_group[1:]:  # skip the first contour, which is the parent
-        theseNodes = list(contour.max_curvature_coordinates)
-        these_bisectors = list(contour.max_bisectors)
-        thoseNodes = []
-        those_bisectors = []
-        for other_contour in contour_group:
-            if other_contour != contour:  # skip theseNodes and focus on thoseNodes
-                nodes = list(other_contour.max_curvature_coordinates)
-                bisectors = list(other_contour.max_bisectors)
-                for n in nodes:
-                    thoseNodes.append(n)  # these are all the nodes from all the other contours
-                for bisector in bisectors:
-                    those_bisectors.append(bisector)
+def find_node_pairs_in_child_contours(contour_group):
+    internode_distance_list=[]
+    for i in range(0,len(contour_group)):
+        contour1 = contour_group[i]
+        contour1_nodes = list(contour1.max_curvature_coordinates)
+        contour1_bisectors = list(contour1.max_bisectors)
+        candidate_nodes = []
+        candidate_bisectors = []
+        for j in range(i+1, len(contour_group)):
+            contour2 = contour_group[j]
+            candidate_nodes += list(contour2.max_curvature_coordinates)
+            candidate_bisectors += list(contour2.max_bisectors)
 
         # Now compare the distance between every node in the internal contour under consideration,
         # and every other contour node. Find the closest.
-        if theseNodes == [] or thoseNodes == []:
+        if contour1_nodes == [] or candidate_nodes == []:
             continue  # if there are no nodes, consider the next contour in the group. This should be impossible though, because it's already been screened for above
-        for i in range(len(theseNodes)):
-            node1_x = theseNodes[i][0]
-            node1_y = theseNodes[i][1]
-            node1_bisector = these_bisectors[i]
-            for j in range(len(thoseNodes)):
-                node2_x = thoseNodes[j][0]
-                node2_y = thoseNodes[j][1]
-                node2_bisector = those_bisectors[j]
+        for i in range(len(contour1_nodes)):
+            node1_x = contour1_nodes[i][0]
+            node1_y = contour1_nodes[i][1]
+            node1_bisector = contour1_bisectors[i]
+            for j in range(len(candidate_nodes)):
+                node2_x = candidate_nodes[j][0]
+                node2_y = candidate_nodes[j][1]
+                node2_bisector = candidate_bisectors[j]
                 diff_x = (node1_x - node2_x) ** 2
                 diff_y = (node1_y - node2_y) ** 2
                 distance = math.sqrt(diff_x + diff_y)
-                internode_distance_list.append([theseNodes[i], thoseNodes[j], distance, node1_bisector, node2_bisector])
-    return internode_distance_list, used_nodes
+                internode_distance_list.append([contour1_nodes[i], candidate_nodes[j], distance, node1_bisector, node2_bisector])
+    return internode_distance_list
 
-def find_node_pairs_in_parent_contour(contour, used_nodes=[], internode_distance_list=[]):
+def find_node_pairs_in_parent_contour(contour,usedNodes):
+    internode_distance_list=[]
     parent_nodes = list(contour.max_curvature_coordinates)
     parent_bisectors = list(contour.max_bisectors)
     for i in range(len(parent_nodes)):
-        if not parent_nodes[i] in used_nodes:
-            node1_x = parent_nodes[i][0]
-            node1_y = parent_nodes[i][1]
-            node1_bisector = parent_bisectors[i]
-            for j in range(len(parent_nodes)):
-                if parent_nodes[j] != parent_nodes[i] and not parent_nodes[j] in used_nodes:
-                    node2_x = parent_nodes[j][0]
-                    node2_y = parent_nodes[j][1]
-                    node2_bisector = parent_bisectors[j]
-                    diff_x = (node1_x - node2_x) ** 2
-                    diff_y = (node1_y - node2_y) ** 2
-                    distance = math.sqrt(diff_x + diff_y)
-                    internode_distance_list.append([parent_nodes[i], parent_nodes[j], distance, node1_bisector, node2_bisector])
-    return internode_distance_list, used_nodes
+        if parent_nodes[i] in usedNodes:
+            continue
+        node1_x = parent_nodes[i][0]
+        node1_y = parent_nodes[i][1]
+        node1_bisector = parent_bisectors[i]
 
-def link_nodes(sortDistList,usedNodes,contour_group):
-    nearestList = []
+
+        for j in range(i+1,len(parent_nodes)):
+
+            if parent_nodes[j] not in usedNodes:
+                node2_x = parent_nodes[j][0]
+                node2_y = parent_nodes[j][1]
+                node2_bisector = parent_bisectors[j]
+                diff_x = (node1_x - node2_x) ** 2
+                diff_y = (node1_y - node2_y) ** 2
+                distance = math.sqrt(diff_x + diff_y)
+                internode_distance_list.append([parent_nodes[i], parent_nodes[j], distance, node1_bisector, node2_bisector])
+
+    return internode_distance_list
+
+def link_nodes(distList,contour_group,usedNodes, node_pairs):
+    MAXIMUM_ANGLE = 90
+
+    sortDistList = sorted(distList, key=lambda x: x[2], reverse=False)
+
     for entry in sortDistList:
-        pair1 = entry[0]
-        pair2 = entry[1]
-        if not pair1 in usedNodes and not pair2 in usedNodes:
-            if [pair1, pair2] not in nearestList:
-                flag = 0
-                allInsideParent, someInsideParent = InsidePolygon(pair1, pair2, contour_group[0].reconstructed_points)
-                if allInsideParent == False:  # firstly, is the polyline inside the parent contour?
-                    flag = 1
-                for i in range(1, len(contour_group)):
-                    allInsideChild, someInsideChild = InsidePolygon(pair1, pair2, contour_group[i].reconstructed_points)
-                    if allInsideChild == True or someInsideChild == True:  # secondly, does it go inside an internal hole?
-                        flag = 1
+        node1 = entry[0]
+        node2 = entry[1]
 
-                if flag == 0:  # if it is a potential  node  pair, check  that it doesn't cut across any pre-existing node pairs
-                    test_string = LineString([pair1, pair2])
-                    for pair in nearestList:
-                        pair_string = LineString(pair)
-                        crosses = pair_string.crosses(test_string)
-                        if crosses == True:
-                            flag = 1
+        if node1 in usedNodes or node2 in usedNodes:
+            continue
 
-                if flag == 0:  # if everything checks out ok, check that the angles of the break line and bisectors are acceptable
-                    bisector1 = entry[3]
-                    bisector2 = entry[4]
-                    inter_node_vector = np.array(pair1) - np.array(pair2)  # im not sure about the impact of direction on angle magnitude
+        # if it is a potential  node  pair, check  that it doesn't cut across any pre-existing node pairs
+        flag = 0
+        test_breakline = LineString([node1, node2])
+        for pair in node_pairs:
+            pair_string = LineString(pair)
+            if pair_string.crosses(test_breakline):
+                flag = 1
+                break
+        if flag==1:
+            continue
 
-                    # this would be for bisector 1 and the inter_node_vector
-                    theta1 = calculate_theta(bisector1, inter_node_vector)
-                    theta2 = calculate_theta(bisector2, inter_node_vector)
+        # check that the angles of the break line and bisectors are acceptable
+        bisector1 = entry[3]
+        bisector2 = entry[4]
+        theta1 = calculate_theta(bisector1, np.array(node2) - np.array(node1))
+        theta2 = calculate_theta(bisector2, np.array(node1) - np.array(node2))
 
-                    if not theta1 <= 60 or not theta2 <= 70:  # I'm taking a guess with the angle
-                        flag = 1
+        if abs(theta1) > MAXIMUM_ANGLE or abs(theta2) > MAXIMUM_ANGLE:  # I'm taking a guess with the angle
+            continue
 
-                if flag == 0:  # if everything is ok, append
-                    nearestList.append([pair1, pair2])
-                    usedNodes.append(pair1)
-                    usedNodes.append(pair2)
-    return nearestList
+        allInsideParent, someInsideParent = InsidePolygon(node1, node2, contour_group[0].reconstructed_points)
+        if not allInsideParent:  # firstly, is the polyline inside the parent contour?
+            continue
+
+        for i in range(1, len(contour_group)):
+            allInsideChild, someInsideChild = InsidePolygon(node1, node2, contour_group[i].reconstructed_points)
+            if allInsideChild == True or someInsideChild == True:  # secondly, does it go inside an internal hole?
+                flag = 1
+                break
+
+        if flag == 1:
+            continue
+
+
+
+        if not filter_pairs_with_length_to_volume_ratio(node1,node2, contour_group):
+            continue
+
+        node_pairs.append([node1, node2])
+        usedNodes.add(node1)
+        usedNodes.add(node2)
+
+def is_contour_closed(contour):
+    return contour[0][0] == contour[-1][0] and contour[0][1] == contour[-1][1]
 
 def ensure_contour_is_closed(contour):
-    if contour[0][0] == contour[-1][0] and contour[0][1] == contour[-1][1]:
+    if is_contour_closed(contour):
         return contour
 
     contour_copy = np.copy(contour)
@@ -404,7 +432,7 @@ def ensure_contour_is_closed(contour):
     return closed_contour
 
 def ensure_contour_is_open(contour):
-    if contour[0][0] != contour[-1][0] or contour[0][1] != contour[-1][1]:
+    if not is_contour_closed(contour):
         return contour
 
     contour_copy = np.copy(contour)
@@ -418,8 +446,8 @@ def calculate_locus(contour):
     :rtype: tuple
 
     """
-    contour = ensure_contour_is_closed(contour)
-    dxy = np.diff(contour, axis=0)
+    closed_contour = ensure_contour_is_closed(contour)
+    dxy = np.diff(closed_contour, axis=0)
     dt = np.sqrt((dxy ** 2).sum(axis=1))
     t = np.concatenate([([0.]), np.cumsum(dt)])
     T = t[-1]
@@ -464,7 +492,7 @@ def calcEFD(contour, order):
     return coeffs
 
 
-def calculate_curvature_and_find_maxima(i, contour, hierarchy, polygon_filter):
+def calculate_curvature_and_find_maxima(i, contour, hierarchy, polygon_filter,simplify):
     cnt = np.squeeze(contour).tolist()
     composite_contour = CompositeContour(np.squeeze(contour), i)
 
@@ -477,7 +505,7 @@ def calculate_curvature_and_find_maxima(i, contour, hierarchy, polygon_filter):
         composite_contour.keep_contour = False
         return composite_contour
 
-    get_coefficients_result = get_efd_parameters_for_simplified_contour(composite_contour.original_points, composite_contour.has_parent, polygon_filter)
+    get_coefficients_result = get_efd_parameters_for_simplified_contour(composite_contour.original_points, composite_contour.has_parent, polygon_filter,simplify)
 
     if get_coefficients_result is None:
         composite_contour.keep_contour = False
@@ -491,20 +519,19 @@ def calculate_curvature_and_find_maxima(i, contour, hierarchy, polygon_filter):
         composite_contour.reconstructed_points)
     node_curvature_values, node_x, node_y,node_bisectors = IdentifyContactPoints(curvature_maxima_values, curvature_maxima_x, curvature_maxima_y,maxima_bisectors, non_maxima_curvature)
 
-    if node_curvature_values != []:
-        composite_contour.max_curvature_values = node_curvature_values
-        composite_contour.max_bisectors = node_bisectors
-    else:
+    composite_contour.max_curvature_values = node_curvature_values
+    composite_contour.max_bisectors = node_bisectors
+    composite_contour.max_curvature_coordinates = list(zip(node_x, node_y))
+
+    if node_curvature_values == [] or node_x == [] or node_y == []:
         composite_contour.keep_contour = False
 
-    if node_x != [] and node_y != []:
-        composite_contour.max_curvature_coordinates = list(zip(node_x, node_y))
-    else:
-        composite_contour.keep_contour = False
 
     return composite_contour
 
 def calculate_angle(contour):
+    contour = ensure_contour_is_open(contour)
+
     v1 = contour - np.roll(contour, shift=1, axis=0)
     v2 = np.roll(contour, shift=-1, axis=0) - contour
     #calculate angles
@@ -518,10 +545,10 @@ def calculate_angle(contour):
     v1_norm = np.linalg.norm(v1, axis=1)
     v2_norm = np.linalg.norm(v2, axis=1)
     for i in range(len(v1_norm)):
-        if v1_norm[i] == 0:
+        '''if v1_norm[i] == 0:
             v1_norm[i] = 1E-17
         if v2_norm[i] == 0:
-            v2_norm[i] = 1E-17
+            v2_norm[i] = 1E-17'''
         v1_norm_2d.append([v1_norm[i],v1_norm[i]])
         v2_norm_2d.append([v2_norm[i], v2_norm[i]])
 
@@ -589,10 +616,16 @@ def FindCurvatureMaxima(curvature_values,cumulative_distance,bisector_vectors,co
     k_maxima_x = []
     k_maxima_y = []
     non_maxima_k = []
-    k_cutoff = 80
+    if len(curvature_values)<50:
+        k_cutoff = 70
+    elif len(curvature_values)<500:
+        k_cutoff = 90
+    else:
+        k_cutoff = 90
     #test_plot_points=[]
     curvature_absolute_values = [abs(value) for value in curvature_values]
     abs_percentile = np.percentile(curvature_absolute_values,k_cutoff)
+    #abs_percentile = np.percentile([x for x in curvature_values if x>0],k_cutoff)
     percentile = np.percentile(curvature_values,k_cutoff)
 
     if max(curvature_values)<0: #we're interested in postive curvature(k) values only
@@ -772,34 +805,28 @@ def plot(points = [],contour1 = [], contour2= []):
             plt.scatter(point[0], point[1],s=5)
     plt.show()
 
-def filter_pairs_with_length_to_volume_ratio(pairs,contour_group,threshold=0.8):
+def filter_pairs_with_length_to_volume_ratio(node1, node2,contour_group,threshold=0.8):
+    contour1, contour2, contour2_initialised, contour2_finalised = slice_contour_by_point_pair(np.asarray(node1), np.asarray(node2), contour_group[0].reconstructed_points)
+    # This condition happens if two nodes are adjacent to one another on the same contour
+    if contour1 ==[] or contour2 == []:
+        # False - happens if both nodes exist on the parent contour
+        # True -  happens if one or both nodes exist on child contours. By default, accept node pairs that are child-child or parent-child. No filtering is applied to these.
+        return not (contour2_initialised and contour2_finalised)
 
-    sorted_distance_pairs_list = sorted(pairs, key=lambda x: calculate_distance_between_points(x[0],x[1]), reverse=False)
-    filtered_pairs=[]
-    for distance_pair in sorted_distance_pairs_list:
-        contour1, contour2,contour2_initialised, contour2_finalised = slice_contour_by_point_pair(np.asarray(distance_pair[0]),np.asarray(distance_pair[1]), contour_group[0].reconstructed_points)
+    # if both nodes are on the parent contour, apply filter to decide whether the points are kept
+    if contour2_initialised and contour2_finalised:
+        #when both nodes exist on the parent contour, and the subcontours (contour1 and contour2 produced by splitting the parent contour with the node pair) both contain points
+        try:
+            contour1_area = math.sqrt(cv2.contourArea(np.array(contour1).astype('int')))
+            contour2_area = math.sqrt(cv2.contourArea(np.array(contour2).astype('int')))
+            distance = calculate_distance_between_points(node1, node2)
+            length_volume_ratio = distance/(min(contour1_area, contour2_area))
+            if length_volume_ratio>threshold:
+                return False
+        except:
+            return False
 
-        if contour1 ==[] or contour2 == []: #this happens if two nodes are adjacent to one another on the same contour
-            if contour2_initialised == True and contour2_finalised == True: #this happens if both nodes exist on the parent contour
-                continue
-            else: # this happens if one or both nodes exist on child contours
-                filtered_pairs.append([distance_pair[0], distance_pair[1]]) #by default, accept node pairs that are child-child or parent-child. No filtering is applied to these.
-        else:
-            if contour2_initialised == True and contour2_finalised == True: #if both nodes are on the parent contour, apply filter to decide whether the points are kept
-                #when both nodes exist on the parent contour, and the subcontours (contour1 and contour2 produced by splitting the parent contour with the node pair) both contain points
-                try:
-                    contour1_area = math.sqrt(cv2.contourArea(np.array(contour1).astype('int')))
-                    contour2_area = math.sqrt(cv2.contourArea(np.array(contour2).astype('int')))
-                    distance = calculate_distance_between_points(distance_pair[0], distance_pair[1])
-                    length_volume_ratio = distance/(min(contour1_area, contour2_area))
-                    if length_volume_ratio>threshold:
-                        continue
-                except:
-                    continue
-
-            filtered_pairs.append([distance_pair[0],distance_pair[1]])
-
-    return filtered_pairs
+    return True
 
 def create_curvature_distance_plot(contour):
     #import seaborn as sns

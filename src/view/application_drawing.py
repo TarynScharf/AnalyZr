@@ -55,10 +55,8 @@ class Drawing():
         group_tag = tags[0]
         if group_tag == 'Image':
             return
-        unique_tag = tags[1] #images only have a group tag, no unique tag
-        coords = self.myCanvas.coords(unique_tag)
         self.myCanvas.delete(group_tag)  # delete everything with the same groupID
-        self.model.DeleteObject(group_tag,coords) #pass the groupID and coordinates to the model, where everything else is handled
+        self.model.DeleteObject(group_tag) #pass the groupID and coordinates to the model, where everything else is handled
 
     def ScrollWithMouseWheel(self, event):
         self.myCanvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
