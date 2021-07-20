@@ -26,7 +26,6 @@ def feret_diameter(blob):  # adapted from here: https://github.com/scikit-image/
     coordinates = np.array(contours)
     coordsF32 = coordinates.astype(np.float32)
     box = cv2.minAreaRect(coordsF32)  # returned: (x,y), (w,h), angle
-    # print(box)
     width = box[1][0]
     minFeret = 0
     height = box[1][1]

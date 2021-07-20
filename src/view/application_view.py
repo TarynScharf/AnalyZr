@@ -1,3 +1,4 @@
+import io
 import tkinter as tk
 import traceback
 from tkinter import *
@@ -10,6 +11,7 @@ from src.view.application_drawing import Drawing
 from src.view.data_capture_dialog import DataCaptureDialog
 from src.view.measurement_table_dialog import MeasurementDialog
 from src.view.segmentation_dialog import SegmentationDialog
+from src.view.measure_scale_dialog import MeasureScaleDialog
 
 os.environ["OPENCV_IO_MAX_IMAGE_PIXELS"] = pow(2,40).__str__()
 import matplotlib
@@ -39,6 +41,7 @@ class View:
         self.mainMenu = Menu(self.master)
         self.fileMenu = Menu(self.mainMenu, tearoff=0)
         self.mainMenu.add_cascade(label="File", menu=self.fileMenu)
+        self.fileMenu.add_command(label = 'Save Image', command = self.save_image)
 
         self.imagesMenu = Menu(self.mainMenu, tearoff=0)
         self.imagesMenu.add_command(label="Load Images", command=lambda: self.create_data_capture_dialog())
@@ -88,6 +91,15 @@ class View:
         master.bind("i", lambda e: self.EditPolygon())
         master.bind("m", lambda e: self.drawing.PointMove())
         master.bind("l", lambda e: self.drawing.DrawScale())
+
+    def save_image(self):
+        image_file_name = filedialog.asksaveasfilename(defaultextension='.jpg')
+        postscript = self.drawing.myCanvas.postscript(colormode='color')
+        image = Image.open(io.BytesIO(postscript.encode('utf-8')))
+
+        if not image_file_name[len(image_file_name)-4:].lower() == '.jpg':
+            image.save(image_file_name+'jpg')
+        image.save(image_file_name)
 
     def open_segmentation_toolbox_dialog(self):
         self.drawing.myCanvas.delete('all')
@@ -178,7 +190,7 @@ class View:
         for file_name in json_file_paths:
             self.model.create_new_json_file(file_name)
 
-    def get_image_info_for_data_capture(self, image_folder_path, json_folder_path, data_capture_image_type):
+    def get_image_info_for_data_capture(self, image_folder_path, json_folder_path, data_capture_image_type, create_json_files):
         #Does 2 things:
         # Check for images in the folder, returns error message if there are none.
         #checks if each image has a corresponding json file. Offers to create the ones that are missing.
@@ -197,10 +209,9 @@ class View:
         self.model.set_source_folder_paths(image_folder_path,json_folder_path)
 
         if missing_json_files:
-            if self.create_json_var.get() == 1:
+            if create_json_files == 1:
                 for file in missing_json_files:
-
-                    self.model.create_new_json_file(file)
+                    self.model.create_new_json_file(file, data_capture_image_type)
             else:
                 self.ok_cancel_create_json_files(missing_json_files)
 
@@ -221,8 +232,8 @@ class View:
     def close_window(self,window):
             window.destroy()
 
-    def load_files(self,image_folder_path,json_folder_path,image_type):
-        self.get_image_info_for_data_capture(image_folder_path, json_folder_path,image_type)
+    def load_files(self,image_folder_path,json_folder_path,image_type, create_json_files):
+        self.get_image_info_for_data_capture(image_folder_path, json_folder_path,image_type, create_json_files)
         self.update_data_capture_display()
 
 
@@ -257,20 +268,29 @@ class View:
             return
         self.drawing.clear_canvas_and_display_image(image_to_display)
         for spot in spotList:
-            self.drawing.draw_interactive_spot(spot, 'green')
+            self.drawing.draw_interactive_spot(spot, 'green2')
+        for contour in contours:
+            self.drawing.draw_contour(contour)
         MeasurementDialog(self,region_measurements)
 
     def process_all_masks_in_folder(self, mask_file_folder):
+        all_folder_measurements = []
         for path,folder,files in os.walk(mask_file_folder):
             for name in files:
-                extension = FileUtils.get_name_without_extension()
+                #extension = FileUtils.get_name_without_extension(name)
                 current_mask_file_path = os.path.join(mask_file_folder,name) #the file path of the current mask we're processing
                 self.DisplayMask(current_mask_file_path)
                 try:
                     _, _, _, measurements = self.model.measure_shapes(current_mask_file_path)
-                    self.model.push_shape_measurements_to_database(measurements)
+                    all_folder_measurements = all_folder_measurements+measurements
+
+                    #self.model.push_shape_measurements_to_database(measurements)
                 except ValueError as e:
                     self.open_error_message_popup_window(str(e))
+                    return
+        filepath = filedialog.asksaveasfilename(defaultextension='.csv', filetypes=[("CSV Files", "*.csv")], title="Save As")
+        self.model.write_to_csv(filepath, all_folder_measurements)
+        #MeasurementDialog(self, all_folder_measurements)
         print('Processing complete')
 
     def ensure_database_path_set(self):
@@ -356,5 +376,12 @@ class View:
 
         for polygon in self.model.get_current_image_contours():
             self.drawing.draw_contour(polygon)
+
+    def get_real_world_distance_for_scale(self, scale_line):
+        try:
+            MeasureScaleDialog(self, self.model, scale_line)
+        except Exception as e:
+            self.open_error_message_popup_window(str(e))
+            return
 
 

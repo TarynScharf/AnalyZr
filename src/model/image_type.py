@@ -6,6 +6,8 @@ class ImageType(Enum):
     RL = 'Reflected light'
     MASK = 'Mask'
     COLLAGE = 'Collage'
+    CL = 'Cathodoluminescence'
+    FI = 'Filter Image'
 
 
     def file_pattern(self):

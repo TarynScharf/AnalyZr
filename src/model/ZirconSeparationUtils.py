@@ -137,7 +137,6 @@ def get_efd_parameters_for_simplified_contour(contour, has_parent, filter_fn,sim
         ORDER_FACTOR= 1
 
     order = int(number_of_points*ORDER_FACTOR)
-    #reconstructed_points = simplify(contour, has_parent) ### for testing must remove
     if order ==0:
         return None
     if filter_fn is not None and not filter_fn(contour):
@@ -367,7 +366,7 @@ def find_node_pairs_in_parent_contour(contour,usedNodes):
     return internode_distance_list
 
 def link_nodes(distList,contour_group,usedNodes, node_pairs):
-    MAXIMUM_ANGLE = 90
+    MAXIMUM_ANGLE = 80
 
     sortDistList = sorted(distList, key=lambda x: x[2], reverse=False)
 
@@ -395,7 +394,7 @@ def link_nodes(distList,contour_group,usedNodes, node_pairs):
         theta1 = calculate_theta(bisector1, np.array(node2) - np.array(node1))
         theta2 = calculate_theta(bisector2, np.array(node1) - np.array(node2))
 
-        if abs(theta1) > MAXIMUM_ANGLE or abs(theta2) > MAXIMUM_ANGLE:  # I'm taking a guess with the angle
+        if abs(theta1) > MAXIMUM_ANGLE or abs(theta2) > MAXIMUM_ANGLE:  # Angle is chosen emperically
             continue
 
         allInsideParent, someInsideParent = InsidePolygon(node1, node2, contour_group[0].reconstructed_points)
@@ -410,8 +409,6 @@ def link_nodes(distList,contour_group,usedNodes, node_pairs):
 
         if flag == 1:
             continue
-
-
 
         if not filter_pairs_with_length_to_volume_ratio(node1,node2, contour_group):
             continue
@@ -515,7 +512,7 @@ def calculate_curvature_and_find_maxima(i, contour, hierarchy, polygon_filter,si
 
     composite_contour.curvature_values, bisection_vectors= calculate_angle(composite_contour.reconstructed_points)
 
-    curvature_maxima_values, curvature_maxima_x, curvature_maxima_y, non_maxima_curvature,maxima_bisectors = FindCurvatureMaxima(composite_contour.curvature_values, composite_contour.cumulative_distance,bisection_vectors,
+    curvature_maxima_values, curvature_maxima_x, curvature_maxima_y, non_maxima_curvature,maxima_bisectors= FindCurvatureMaxima(composite_contour.curvature_values, composite_contour.cumulative_distance,bisection_vectors,
         composite_contour.reconstructed_points)
     node_curvature_values, node_x, node_y,node_bisectors = IdentifyContactPoints(curvature_maxima_values, curvature_maxima_x, curvature_maxima_y,maxima_bisectors, non_maxima_curvature)
 
@@ -545,10 +542,6 @@ def calculate_angle(contour):
     v1_norm = np.linalg.norm(v1, axis=1)
     v2_norm = np.linalg.norm(v2, axis=1)
     for i in range(len(v1_norm)):
-        '''if v1_norm[i] == 0:
-            v1_norm[i] = 1E-17
-        if v2_norm[i] == 0:
-            v2_norm[i] = 1E-17'''
         v1_norm_2d.append([v1_norm[i],v1_norm[i]])
         v2_norm_2d.append([v2_norm[i], v2_norm[i]])
 
@@ -610,28 +603,27 @@ def calculateK(con, coef):
     return all_K
 
 def FindCurvatureMaxima(curvature_values,cumulative_distance,bisector_vectors,contour_points):
-    #plot(contour1 = contour_points)
     k_maxima_values = []
     k_maxima_bisectors = []
     k_maxima_x = []
     k_maxima_y = []
     non_maxima_k = []
+    k_maxima_cumulative_distance=[]
     if len(curvature_values)<50:
         k_cutoff = 70
     elif len(curvature_values)<500:
         k_cutoff = 90
     else:
         k_cutoff = 90
-    #test_plot_points=[]
     curvature_absolute_values = [abs(value) for value in curvature_values]
     abs_percentile = np.percentile(curvature_absolute_values,k_cutoff)
-    #abs_percentile = np.percentile([x for x in curvature_values if x>0],k_cutoff)
     percentile = np.percentile(curvature_values,k_cutoff)
 
-    if max(curvature_values)<0: #we're interested in postive curvature(k) values only
+    if max(curvature_values)<0:
+        #we're interested in postive curvature(k) values only
         pass
     else:
-        for i in range(len(curvature_values)):  #for each curvature value in the list
+        for i in range(len(curvature_values)):
             if i<len(curvature_values)-1:
                 thisK = curvature_values[i]
                 nextK = curvature_values[i+1]
@@ -645,32 +637,27 @@ def FindCurvatureMaxima(curvature_values,cumulative_distance,bisector_vectors,co
 
             if thisK > nextK:
                 if thisK > prevK:
-                    #point_test = [[contour_points[i][0],contour_points[i][1]]]
-                    #plot(point_test)
                     if abs(thisK) >= abs_percentile and thisK > percentile:
                         k_maxima_values.append(thisK)  #get the k maxima
                         k_maxima_bisectors.append(bisector_vectors[i])
                         k_maxima_x.append(contour_points[i][0])  # get the x value associated with the k
                         k_maxima_y.append(contour_points[i][1])  # get the y value associated with the k
-                        #test_plot_points.append([contour_points[i][0],contour_points[i][1]])
                     else:
-                        non_maxima_k.append(thisK)  # all k values that aren't maxima
+                        # all k values that aren't maxima
+                        non_maxima_k.append(thisK)
                 elif thisK==prevK and prevK>prev2K:
                     if abs(thisK) >= abs_percentile and thisK > percentile:
                         k_maxima_values.append(thisK)  #get the k maxima
                         k_maxima_bisectors.append(bisector_vectors[i])
                         k_maxima_x.append(contour_points[i][0])  # get the x value associated with the k
                         k_maxima_y.append(contour_points[i][1])  # get the y value associated with the k
-                        #test_plot_points.append([contour_points[i][0],contour_points[i][1]])
                     else:
-                        non_maxima_k.append(thisK)  # all k values that aren't maxima
+                        # all k values that aren't maxima
+                        non_maxima_k.append(thisK)
 
-    #plot(test_plot_points)
     return k_maxima_values, k_maxima_x, k_maxima_y, non_maxima_k,k_maxima_bisectors
 
 def IdentifyContactPoints(k_maxima_values, k_maxima_x, k_maxima_y,maxima_bisectors, non_maxima_k):
-    #k = curvature
-
     max_k = max(non_maxima_k,default = 0)
     maxima_to_remove = []
     for k in k_maxima_values:

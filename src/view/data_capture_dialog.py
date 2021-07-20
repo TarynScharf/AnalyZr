@@ -100,5 +100,5 @@ class DataCaptureDialog():
         image_folder = self.image_folder_path.get()
         json_folder = self.json_folder_path.get()
         data_capture_image_type = ImageType(self.image_type_combobox.get())
-        self.view.load_files(image_folder,json_folder,data_capture_image_type)
+        self.view.load_files(image_folder,json_folder,data_capture_image_type, self.create_json_var.get())
         self.browse_for_files_window.destroy()

@@ -347,25 +347,6 @@
             ]
         },
         {
-            "id": "8.1",
-            "type": "POINT",
-            "tags": [
-                "SPOT"
-            ],
-            "boundingBox": {
-                "height": 5,
-                "width": 5,
-                "left": 1039.0,
-                "top": 456.0
-            },
-            "points": [
-                {
-                    "x": 1039.0,
-                    "y": 456.0
-                }
-            ]
-        },
-        {
             "id": "7.1",
             "type": "POINT",
             "tags": [
@@ -515,6 +496,44 @@
                 {
                     "x": 430.0,
                     "y": 1474.0
+                }
+            ]
+        },
+        {
+            "id": "3.1",
+            "type": "POINT",
+            "tags": [
+                "SPOT"
+            ],
+            "boundingBox": {
+                "height": 5,
+                "width": 5,
+                "left": 491.0,
+                "top": 288.0
+            },
+            "points": [
+                {
+                    "x": 491.0,
+                    "y": 288.0
+                }
+            ]
+        },
+        {
+            "id": "1.8",
+            "type": "POINT",
+            "tags": [
+                "SPOT"
+            ],
+            "boundingBox": {
+                "height": 5,
+                "width": 5,
+                "left": 1042.0,
+                "top": 463.0
+            },
+            "points": [
+                {
+                    "x": 1042.0,
+                    "y": 463.0
                 }
             ]
         }

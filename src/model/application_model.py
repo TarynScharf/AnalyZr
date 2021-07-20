@@ -367,10 +367,11 @@ class Model():
         return os.path.exists(json_file)
 
     def is_file_name_of_image_type(self, file_name:str, image_type):
+        name = os.path.splitext(file_name)[0]
         pattern = image_type.file_pattern()
         if image_type == ImageType.COLLAGE:
             return True
-        return file_name.endswith("_" + pattern) or ("_" + pattern + "_") in file_name
+        return name.endswith("_" + pattern) or ("_" + pattern + "_") in file_name
 
     def create_new_json_file(self, data_capture_image_path, image_type):
         image = cv2.imread(data_capture_image_path)[:,:,0]
@@ -524,7 +525,7 @@ class Model():
                     regions_to_remove_from_mask_image.append(unwanted_object)
 
         if json_data.scale is not None:
-            scale_in_real_world_distance = 100 / json_data.scale.get_length()
+            scale_in_real_world_distance = json_data.scale.real_world_distance / json_data.scale.get_length()
         elif len(json_data.spot_areas)>0:
             average_scale = ZirconSeparationUtils.getScale(json_file_path, 'SPOT')
             if average_scale is not None:
@@ -558,7 +559,7 @@ class Model():
     def remove_unwanted_objects_from_binary_image(self,objects_to_remove):
         for unwanted_object in objects_to_remove:
             x,y = unwanted_object.get_centroid()
-            label = self.threshold[int(x), int(y)]
+            label = self.threshold[int(y), int(x)]
             if label != 0:
                 self.threshold[self.threshold == label] = 0
 
@@ -628,8 +629,8 @@ class Model():
             # img_to_display = cv2.circle(img_to_display, (int(centroid_List[i][1]), int(centroid_List[i][0])), 3, (0, 0, 255), 2)
             grain_centroid = measurement.grain_centroid
             cv2.putText(image_to_display, str(measurement.grain_number),
-                        (int(grain_centroid[1] - 2), int(grain_centroid[0] - 2)), cv2.FONT_HERSHEY_DUPLEX, 0.3,
-                        (0, 0, 255))
+                        (int(grain_centroid[1] - 2), int(grain_centroid[0] - 2)), cv2.FONT_HERSHEY_DUPLEX, 0.5,
+                        (255,0,0))
 
         return image_to_display
 
@@ -770,7 +771,6 @@ class Model():
             area = cv2.contourArea(contour, False)
             return area >= 50
 
-        reconstructed_points = [] #for testing
         self.threshold = self.convert_contours_to_mask_image(self.height,self.width, self.contours_by_group_tag.values())
 
         contours, hierarchy = cv2.findContours(self.threshold, cv2.RETR_TREE,cv2.CHAIN_APPROX_SIMPLE)  # get the new contours of the eroded masks
@@ -812,7 +812,6 @@ class Model():
                 count += 1
                 self.breaklines.append(breakline)
 
-        print(datetime.datetime.now())
         return composite_contour_list, image_to_show, is_image_binary, self.breaklines
 
     def set_rl_tl_paths_and_usage(self,rl_path, tl_path,binarise_rl_image, binarise_tl_image):

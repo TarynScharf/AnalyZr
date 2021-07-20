@@ -134,7 +134,7 @@ class SegmentationDialog():
         self.Browse_Folder = Button(self.Measure_Shapes_Frame, text="...", width=5, command=lambda: self.Browse('Folder'))
         self.Browse_Folder.grid(column=2, row=2, padx=3, pady=5,sticky='w')
 
-        self.Process_Folder = Button(self.Measure_Shapes_Frame, text="Process Folder", width=20, command=lambda: self.process_mask_folder)
+        self.Process_Folder = Button(self.Measure_Shapes_Frame, text="Process Folder", width=20, command=self.process_mask_folder)
         self.Process_Folder.grid(column=3, row=2, padx=3, pady=5,sticky='w')
 
         self.measureShapes = Button(self.Measure_Shapes_Frame, text="Measure Shapes", command=self.measure_shapes)

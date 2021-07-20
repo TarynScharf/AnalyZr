@@ -49,6 +49,8 @@ class Drawing():
 
         self.displayed_image = None
 
+
+
     def DeleteObject(self, event):
         thisObj = event.widget.find_withtag('current')[0]  # get the object clicked on
         tags = self.myCanvas.gettags(thisObj)  # find the groupID for the object clicked on
@@ -124,7 +126,7 @@ class Drawing():
         self.myCanvas.coords(self.scaleLine.unique_tag, self.scaleLine.x0, self.scaleLine.y0, self.scaleLine.x1, self.scaleLine.y1)
 
     def finish_scale(self,mouse_event):
-        self.model.save_drawing_object_to_json(self.scaleLine)
+        self.view.get_real_world_distance_for_scale(self.scaleLine)
         self.scaleLine = None
 
     def DupDraw(self):
@@ -285,7 +287,6 @@ class Drawing():
             self.myCanvas.create_oval(spotX-5,spotY-5, spotX+5, spotY+5, fill='lightgreen',outline='green', width=1, activefill='yellow', activeoutline='yellow', tags=('s_'+str(spotID), 'spot_'+str(spotID)))
             self.myCanvas.create_text(spotX-7,spotY-7,fill='green', text=spotID, tags=('s_'+str(spotID), 'spotno_'+str(spotID)))
 
-
     def plot_kvalues_on_grain_image(self, composite_contour_list, underlying_image, is_binary_image, image_width, image_height):
         dpi = 100
         fig = plt.figure(figsize=(image_width / dpi, image_height / dpi))
@@ -296,33 +297,69 @@ class Drawing():
         plt.axis('off')
 
         if not is_binary_image:
-            plt.imshow(underlying_image, cmap='jet', alpha=0.5)
+            plt.imshow(underlying_image, cmap='jet')
         else:
             plt.imshow(underlying_image, cmap='Greys_r')
-
+        max_angles = [max(contour.curvature_values) for contour in composite_contour_list if contour.keep_contour]
+        max_angle = max(max_angles)
         for contour in composite_contour_list:
             if contour.keep_contour == False:
                 continue
             x, y = zip(*contour.reconstructed_points)
-            plt.scatter(x, y, c=contour.curvature_values, vmin=-1, vmax=1, s=5)
-            #for i, label in enumerate(contour.curvature_values):
-            #    plt.annotate(str(round(label,2)), (x[i], y[i]), fontsize='small')
-            xmax,ymax = zip(*contour.max_curvature_coordinates)
-            #for i in range (len(xmax)):
-            #    text= str(xmax[i])+" | "+str(ymax[i])
-             #   plt.text(xmax[i]+1,ymax[i]+3,c = 'red', s=text, size="medium")
+            sc = plt.scatter(x, y, c=contour.curvature_values, cmap='rainbow', vmin=0, vmax=max_angle, s=15)
+            xmax, ymax = zip(*contour.max_curvature_coordinates)
+            plt.scatter(xmax, ymax, c='red', facecolor='black', s=7)
+            for i in range(len(contour.reconstructed_points)):
 
-            plt.scatter(xmax,ymax,facecolors='none',edgecolors='red',s=7,linewidth=1)
-            #sc=plt.scatter(xmax,ymax,facecolors='none',edgecolors='red',s=7,linewidth=1)
-            #cbaxis = fig.add_axes([0.9,0.1,0.03,0.8])
-            #cbar = plt.colorbar(sc, cax=cbaxis)
-            #cbar.set_label('Curvature (K)', rotation=270, labelpad=20)
-        plt.subplots_adjust(top=1, bottom=0, right=1, left=0, hspace=0, wspace=0)
+                if contour.curvature_values[i]>=80:
+                   plt.scatter(x[i], y[i], c=contour.curvature_values[i], zorder = 3, cmap='rainbow', vmin=0, vmax=max_angle, s=20)
+                elif contour.curvature_values[i] >= 35 and contour.curvature_values[i]<80:
+                    plt.scatter(x[i], y[i], c=contour.curvature_values[i], zorder=2, cmap='rainbow', vmin=0, vmax=max_angle, s=20)
+                else:
+                    plt.scatter(x[i], y[i], c=contour.curvature_values[i], zorder=1, cmap='rainbow', vmin=0, vmax=max_angle, s=5)
+
+        cbaxis = fig.add_axes([0.80,0.1,0.03,0.8])
+        cbar = fig.colorbar(sc, cax=cbaxis)
+        cbar.set_label('Angle (degrees)', rotation=270, labelpad=20)
+        plt.savefig(fname='C:\\Users\\20023951\\Documents\\PhD\\Reporting\\Paper1_ZirconSeparationUtility\\images\\K values\\angles.png', dpi=600, facecolor='w', edgecolor='w',
+        orientation='portrait', format=None,transparent=False,
+        bbox_inches=None, pad_inches=0.1,frameon=None, metadata=None)
+        self.plot_angle_displacement_graph(composite_contour_list[0], max_angle)
 
         canvas_data, (canvas_width,canvas_height) = canvas.print_to_buffer()  # taken from here: https://matplotlib.org/3.1.1/gallery/user_interfaces/canvasagg.html
         image_matrix = np.frombuffer(canvas_data, np.uint8).reshape((canvas_height, canvas_width, 4))
         image_pill = PIL.Image.frombytes("RGBA", (canvas_width, canvas_height), image_matrix)
         self.clear_canvas_and_display_image(image_pill)
+
+    def plot_angle_displacement_graph(self, contour,max_angle):
+
+        if contour.keep_contour == False:
+            return
+        #calculate the cumulative displacement along the contour
+        dxy = np.diff(contour.reconstructed_points, axis=0)
+        dt = np.sqrt((dxy ** 2).sum(axis=1))
+        cumulative_distance = np.concatenate([([0.]), np.cumsum(dt)])
+
+
+        #get the displacement value for each max curvature:
+        displacements = []
+        for maximum in contour.max_curvature_values:
+            for i in range(len(contour.curvature_values)):
+                if maximum == contour.curvature_values[i]:
+                    displacements.append(cumulative_distance[i])
+
+        fig = plt.figure(figsize=(7,7))
+        ax = fig.add_axes([0.1, 0.1, 0.9, 0.9])
+
+        plt.margins(0, 0)
+        ax.plot(cumulative_distance, contour.curvature_values, c='black', zorder=1)
+        ax.set_ylabel('Angle (degrees)', fontsize='11')
+        ax.set_xlabel('Contour Perimeter Distance (pixels)',fontsize='11')
+        plt.xlim((0, 1600))
+        plt.ylim(-60,110)
+        plt.tight_layout()
+        plt.savefig(fname='C:\\Users\\20023951\\Documents\\PhD\\Reporting\\Paper1_ZirconSeparationUtility\\images\\K values\\angle_displacement_graph.png', dpi=600, orientation='portrait',bbox_inches='tight')
+        #plt.show()
 
     def draw_image_data(self, image_data):
         for spot in image_data.spots:
@@ -366,9 +403,9 @@ class Drawing():
 
         self.myCanvas.delete(self.uniqueTag)  # delete all pre-existing lines and redraw
         if size > 2:
-            self.myCanvas.create_polygon(coords, fill='', outline='red', activeoutline='yellow', width=1, tags=contour.get_tags())  # redraw,now includes the added point
+            self.myCanvas.create_polygon(coords, fill='', outline='red', activeoutline='yellow', width=2, tags=contour.get_tags())  # redraw,now includes the added point
         else:
-            self.myCanvas.create_line(coords, fill='red', activefill='yellow', width=1, tags=contour.get_tags())  # if there are only two points, its a line not a polygon
+            self.myCanvas.create_line(coords, fill='red', activefill='yellow', width=2, tags=contour.get_tags())  # if there are only two points, its a line not a polygon
 
 
     def draw_text(self,tags,x,y,text,colour):
