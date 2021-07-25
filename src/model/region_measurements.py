@@ -24,7 +24,7 @@ class RegionMeasurement():
         self.image_id = image_id # unique code coming from VOTT, per image
         self.grain_number = grain_number
         self.grain_centroid =grain_centroid # centroid of grain
-        self.grainspot = ''
+        self.grain_spots = ''
         self.area= area
         self.equivalent_diameter = equivalent_diameter
         self.perimeter = perimeter
@@ -52,7 +52,7 @@ class RegionMeasurement():
         return [self.sampleid,
                 self.image_id,
                 self.grain_number,
-                self.grainspot,
+                self.grain_spots,
                 round_decimals_for_display(self.grain_centroid[0]),
                 round_decimals_for_display(self.grain_centroid[1]),
                 round_decimals_for_display(self.area),
@@ -99,7 +99,7 @@ class RegionMeasurement():
                 'contour'
                 ]
     @staticmethod
-    def get_database_headers(self):
+    def get_database_headers():
         return ['sampleid',
                 'image_id',
                 'grain_number',
@@ -129,23 +129,23 @@ class RegionMeasurement():
 
         return [self.sampleid,
                 quote(self.image_id),
-                self.grain_number,
+                str(self.grain_number),
                 quote(self.grain_centroid),
                 quote(self.grain_spots),
-                self.area,
-                self.equivalent_diameter,
-                self.perimeter,
-                self.minor_axis_length,
-                self.major_axis_length,
-                self.solidity,
-                self.convex_area,
-                self.formFactor,
-                self.roundness,
-                self.compactness,
-                self.aspectRatio,
-                self.minFeret,
-                self.maxFeret,
+                str(self.area),
+                str(self.equivalent_diameter),
+                str(self.perimeter),
+                str(self.minor_axis_length),
+                str(self.major_axis_length),
+                str(self.solidity),
+                str(self.convex_area),
+                str(self.formFactor),
+                str(self.roundness),
+                str(self.compactness),
+                str(self.aspectRatio),
+                str(self.minFeret),
+                str(self.maxFeret),
                 quote(self.contour),
-                quote(self.image_dimensions),
+                quote(self.image_region),
                 quote(self.mask_image)
                 ]

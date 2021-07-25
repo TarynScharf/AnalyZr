@@ -4,12 +4,15 @@ import datetime
 import json
 import math
 import os
+import re
 import tkinter as tk
+from tkinter import messagebox
 
 import cv2
 import matplotlib
 import numpy as np
 #import pyodbc
+import pyodbc
 import shapely
 # import skimage.segmentation because else it
 # says there's no segmentation module
@@ -71,6 +74,7 @@ class Model():
         self.spotCount = 0
         self.rectangle = None
 
+        #a list of json file names with corresponding image file names
         self.jsonList = []
 
         self.unique_sample_numbers = {}  # a dictionary of all samples numbers of all images loaded for spot capture. Contains unique sample numbers only. Records spots per sample.
@@ -212,33 +216,40 @@ class Model():
 
         return list(self.contours_by_group_tag.values())
 
-    def update_spot_in_json_file(self,spot):
-        fileLocation = self.json_folder_path
+    def update_spot_location_in_json_file(self, spot):
         if self.mask_path:
             file_path = self.mask_path
         elif self.rl_path:
             file_path = self.rl_path
         elif self.tl_path:
             file_path = self.tl_path
-        t_regionID = file_path.split('/')[-1].split('_')
-        regionID = '_'.join(t_regionID[4:]).replace('.png', '')
 
-        for path, folder, files in os.walk(fileLocation):
-            for name in files:
-                if name == self.json_file_name:  # find the json file that relates to the pdf page (image) under consideration
-                    with open(os.path.join(fileLocation, self.json_file_name), errors='ignore') as jsonFile:
-                        data = json.load(jsonFile)
+        #get the json file name
+        image_name = FileUtils.get_name_without_extension(file_path)
+        image_types = [ImageType.RL, ImageType.TL, ImageType.MASK,ImageType.COLLAGE]
+        for type in image_types:
+            pattern = "_" + type.file_pattern()
+            result = re.search(pattern, image_name, re.IGNORECASE)
+            if result is not None:
+                index = result.start()
+                json_file_name = image_name[:index]+".json"
+                region_id = JsonData.get_region_id_from_file_path(type,file_path)
+                break
 
-                    region_top, region_left, _, _ = self.get_region_dimensions_from_json(data, regionID)
-                    for region in data['regions']:
-                        if region['id'] == spot.group_tag and region['type'] == 'POINT':
-                            x = spot.x0 + region_left
-                            y = spot.y0 + region_top
-                            newPoints = [{"x": x, "y": y}]
-                            region["points"] = newPoints
-
-                    with open(os.path.join(fileLocation, self.json_file_name), 'w', errors='ignore') as updatedFile:
-                        json.dump(data, updatedFile, indent=4)
+        with open(os.path.join(self.json_folder_path, json_file_name), errors='ignore') as jsonFile:
+            data = json.load(jsonFile)
+        if region_id == None:
+            region_id = data["regions"][0]["id"]
+        region_top, region_left, _, _ = self.get_region_dimensions_from_json(data, region_id)
+        for region in data['regions']:
+            if region['id'] == spot.group_tag and region['type'] == 'POINT':
+                x = spot.x0 + region_left
+                y = spot.y0 + region_top
+                newPoints = [{"x": x, "y": y}]
+                region["points"] = newPoints
+                break
+        with open(os.path.join(self.json_folder_path, json_file_name), 'w', errors='ignore') as updatedFile:
+            json.dump(data, updatedFile, indent=4)
 
     def save_drawing_object_to_json(self, object):
 
@@ -251,8 +262,7 @@ class Model():
         with open(os.path.join(self.json_folder_path, self.image_iterator_current[0]), 'w', errors='ignore') as updatedFile:
             json.dump(data, updatedFile, indent=4)
 
-
-    def update_spot_in_json(self, spot, previous_group_tag):
+    def update_spot_group_tag_in_json(self, spot, previous_group_tag):
         with open(os.path.join(self.json_folder_path, self.image_iterator_current[0]), errors='ignore') as jsonFile:
             data = json.load(jsonFile)
             anyMatch = False
@@ -321,7 +331,8 @@ class Model():
 
         with open(os.path.join(self.json_folder_path, jsonName), errors='ignore') as jsonFile:
             data = json.load(jsonFile)
-
+        if regionID == None:
+            regionID = data['regions'][0]['id']
         this_region = None
         for region in data["regions"]:
             if region["id"] == regionID:
@@ -355,7 +366,8 @@ class Model():
                 # check for images
                 if extension.lower() == '.png' and self.is_file_name_of_image_type(name,data_capture_image_type):
                     has_images = True
-                    json_file = os.path.splitext(name)[0] + '.json'
+                    file_name_without_imagetype = name.replace('_'+data_capture_image_type.name,'')
+                    json_file = os.path.splitext(file_name_without_imagetype)[0] + '.json'
                     has_json = self.does_json_exist(os.path.join(json_folder_path, json_file))
                     if not has_json:
                         json_path = os.path.join(path,name)
@@ -387,14 +399,15 @@ class Model():
     def read_sampleID_and_spots_from_json(self):
         # Get a list of unique sample ID's and the spots associated with them.
         for path, folders, files in os.walk(self.json_folder_path):
-            for name in files:
-                if os.path.splitext(name)[1] == '.json':
-                    with open(os.path.join(self.json_folder_path, name), errors='ignore') as jsonFile:
+            for json_file_name in files:
+                if os.path.splitext(json_file_name)[1] == '.json':
+                    with open(os.path.join(self.json_folder_path, json_file_name), errors='ignore') as jsonFile:
                         data = json.load(jsonFile)
-                    if not name in self.jsonList:
-                        self.jsonList.append([name, data['asset'][
-                            'name']])  # add the image name to the list of json files, as jsons and images have same name
-                        sampleID = data['asset']['name'].split("_")[0]
+                    if not json_file_name in self.jsonList:
+                        # add the image name to the list of json files, as jsons and images have same name
+                        image_name = data['asset']['name']
+                        self.jsonList.append([json_file_name, image_name])
+                        sampleID = image_name.split("_")[0]
                         if sampleID not in self.unique_sample_numbers:  # create a dictionary with unique sample numbers only
                             self.unique_sample_numbers[sampleID] = set()
                             self.sampleList.append(sampleID)
@@ -421,26 +434,30 @@ class Model():
         self.database_file_path = database_file_path
 
     def push_shape_measurements_to_database(self, measurements):
+        image_ids = set()
+        images_already_in_db = []
         cursor = None
         connection = None
-        # push the shape descriptors to the shape_descriptor table
+
         try:
             connection = pyodbc.connect(r'DRIVER={Microsoft Access Driver (*.mdb, *.accdb)};DBQ='+str(self.database_file_path))
             cursor = connection.cursor()
             colArray = ','.join(RegionMeasurement.get_database_headers())
-            regionID = measurements[0].image_id
-            queryStatement = "Select * from import_shapes where image_id = '" + regionID + "'"
-            cursor.execute(queryStatement)
-            results = cursor.fetchall()
-
-            if len(results) >0:
-                raise ValueError(f'Sample already in DB: {regionID}')
 
             for measurement in measurements:
-                value_string = ','.join(measurement.get_database_row)
-                insertStatement = '''INSERT INTO import_shapes(''' + colArray + ''') VALUES(''' + value_string + ''')'''
-                cursor.execute(insertStatement)
-                cursor.commit()
+                image_id = measurement.image_id
+                if image_id not in image_ids:
+                    image_ids.add(image_id)
+                    queryStatement = "Select * from import_shapes where image_id = '" + str(image_id) + "'"
+                    cursor.execute(queryStatement)
+                    results = cursor.fetchall()
+                    if len(results) > 0:
+                        images_already_in_db.append(image_id)
+                if image_id not in images_already_in_db:
+                    value_string = ','.join(measurement.get_database_row())
+                    insertStatement = f"INSERT INTO import_shapes({colArray}) VALUES({value_string})"
+                    cursor.execute(insertStatement)
+                    cursor.commit()
 
         except Exception as e:
             if isinstance(e,ValueError):
@@ -453,6 +470,9 @@ class Model():
                 cursor.close()
             if connection:
                 connection.close()
+            if len(images_already_in_db)>1:
+                list_images_unprocessed = ",".join(str(id) for id in image_ids)
+                messagebox.showinfo("Information", f"The following samples are already in the database and were not processed: {list_images_unprocessed}")
 
     def set_mask_path(self, mask_path):
         self.mask_path = mask_path
@@ -498,7 +518,6 @@ class Model():
         spotList = []
         regions_to_remove_from_mask_image = []
         region_object = json_data.get_image_region(regionID)
-
         region_top = region_object.y0
         region_bottom = region_object.y1
         region_left = region_object.x0
@@ -616,15 +635,13 @@ class Model():
             else:
                 for spot in spots_in_region:
                     spot_measurement = copy.deepcopy(measurement)
-                    spot_measurement.grainspot = spot.group_tag
+                    spot_measurement.grain_spots = spot.group_tag
                     measurements.append(spot_measurement)
 
         return measurements
 
     def create_labeled_image(self,region_measurements):
         image_to_display = self.Current_Image.copy()
-
-        # cv2.imwrite('C:/Users/20023951/Documents/PhD/Reporting/Paper1_ZirconSeparationUtility/CaseStudy/CaseStudy_MaduraShelf/mask_img.jpg', img_to_display)
         for measurement in region_measurements:
             # img_to_display = cv2.circle(img_to_display, (int(centroid_List[i][1]), int(centroid_List[i][0])), 3, (0, 0, 255), 2)
             grain_centroid = measurement.grain_centroid
@@ -634,13 +651,13 @@ class Model():
 
         return image_to_display
 
-    def measure_shapes(self, mask_path):
+    def measure_shapes(self, mask_path, process_folder):
         if self.json_folder_path is None:
             raise ValueError('No json folder path selected')
-
         json_file_path,region_id,sample_id = self.get_json_path_and_region_id_and_sample_id_for_measurement(mask_path)
         data = JsonData.load_all(json_file_path)
-
+        if region_id == None or region_id == '':
+            region_id = data.image_regions[0].group_tag
         self.spots_in_measured_image = None
         self.contours_by_group_tag={}
 
@@ -652,9 +669,12 @@ class Model():
 
         region_measurements = self.create_measurement_table(sample_id,region_id,image_region,scale_in_real_world_units,mask_path,spotList)
 
-        labeled_image = self.create_labeled_image(region_measurements)
+        if process_folder == False:
+            labeled_image = self.create_labeled_image(region_measurements)
+            image_to_display = Image.fromarray(labeled_image)
+        else:
+            image_to_display = self.threshold
 
-        image_to_display = Image.fromarray(labeled_image)
         contours = self.extract_contours_from_image("extcont")
 
         return image_to_display, contours, spotList,region_measurements
@@ -736,6 +756,7 @@ class Model():
         self.threshold = opening_uint8
 
     def set_source_folder_paths(self, image_folder_path, json_folder_path):
+        self.jsonList = []
         self.image_folder_path = image_folder_path
         self.set_json_folder_path(json_folder_path)
 
@@ -757,7 +778,7 @@ class Model():
         self.check_spot_id_is_unique(new_ID)
         previous_group_tag = spot.group_tag
         spot.group_tag = new_ID
-        self.update_spot_in_json(spot, previous_group_tag)
+        self.update_spot_group_tag_in_json(spot, previous_group_tag)
 
     def check_spot_id_is_unique(self,ID):
         if ID in self.unique_sample_numbers[self.currentSample]:

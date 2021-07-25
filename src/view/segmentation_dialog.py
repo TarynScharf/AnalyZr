@@ -1,3 +1,4 @@
+import json
 import os
 import tkinter as tk
 from tkinter import *
@@ -12,6 +13,7 @@ class SegmentationDialog():
     def __init__(self, view):
         self.view = view
         self.Segmentation_Window = Toplevel(self.view.master)
+        self.Segmentation_Window.protocol("WM_DELETE_WINDOW", self.on_closing)
         self.Segmentation_Window.title("Image Segmentation Toolbox")
         self.Segmentation_Window.minsize(400, 110)
         self.Segmentation_Window.lift()
@@ -188,8 +190,8 @@ class SegmentationDialog():
             self.view.model.set_image_details(path, ImageType.TL)
 
         if case_type == 'Mask':
-            self.mask_file_path.set(path)
-            self.update_textbox(self.mask_filepath_textbox,path)
+            #self.mask_file_path.set(path)
+            #self.update_textbox(self.mask_filepath_textbox,path)
             self.view.model.set_image_details(path, ImageType.MASK)
             self.measureShapes.config(state=NORMAL)
             self.saveMask.config(state=NORMAL)
@@ -221,10 +223,10 @@ class SegmentationDialog():
 
     def display_mask(self):
         self.view.DisplayMask(self.mask_file_path.get())
-        self.update_textbox(self.mask_filepath_textbox, self.mask_file_path.get())
-        self.update_textbox(self.TLTextBox, self.view.model.tl_path)
-        self.update_textbox(self.RLTextBox, self.view.model.rl_path)
-        self.measureShapes.config(state=NORMAL)
+        #self.update_textbox(self.mask_filepath_textbox, self.mask_file_path.get())
+        #self.update_textbox(self.TLTextBox, self.view.model.tl_path)
+        #self.update_textbox(self.RLTextBox, self.view.model.rl_path)
+        #self.measureShapes.config(state=NORMAL)
 
     def measure_shapes(self):
         mask_path = self.mask_file_path.get()
@@ -248,14 +250,22 @@ class SegmentationDialog():
         region_id = JsonData.get_region_id_from_file_path(image_type, path)
         json_unique_name = JsonData.get_json_file_name_from_path(image_type,path)
         mask_file_name = FileUtils.get_name_without_extension(json_unique_name) + "_mask"
-        if region_id is not None:
-           mask_file_name +=f'_{region_id}'
-
-        mask_path = os.path.join(mask_folder_path,mask_file_name+'.png')
+        mask_path = os.path.join(mask_folder_path, mask_file_name + '.png')
         json_folder_path = self.view.model.json_folder_path
-        if json_folder_path is None:
+
+        if json_folder_path is None or json_folder_path == '':
             self.view.open_error_message_popup_window('No json folder has been loaded')
             return
+
+        if region_id is not None:
+            mask_file_name +=f'_{region_id}'
+        else:
+            #if no region id is detected in the file path,
+            #the user is dealing with a TL or RL image, one image on the page
+            #and the first region describes the image region
+            with open(os.path.join(json_folder_path, json_unique_name), errors='ignore') as jsonFile:
+                data = json.load(jsonFile)
+            region_id = data["regions"][0]["id"]
 
         json_file_path = os.path.join(json_folder_path,json_unique_name)
         json_data = JsonData.load_all(json_file_path)
@@ -265,5 +275,9 @@ class SegmentationDialog():
 
         self.view.model.set_mask_path(mask_path)
         self.view.model.write_mask_to_png(mask_path)
+
+    def on_closing(self):
+        self.Segmentation_Window.destroy()
+        self.view.mainMenu.entryconfig('Data Capture', state=NORMAL)
 
 

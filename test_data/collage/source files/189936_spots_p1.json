@@ -1,0 +1,145 @@
+{
+    "asset": {
+        "format": "png",
+        "id": "92fe01345ca4d0d3794c642899d1b80b",
+        "name": "189936_spots_p1.png",
+        "path": "file:C:/Users/20023951/Documents/PhD/GSWA/Geochem_Interrogate/Inv1_Files/189936_spots_p1.png",
+        "size": {
+            "width": 1685,
+            "height": 2382
+        },
+        "state": 2,
+        "type": 1,
+        "vott_name": "92fe01345ca4d0d3794c642899d1b80b-asset.json"
+    },
+    "regions": [
+        {
+            "id": "gT8B5VrIy",
+            "type": "RECTANGLE",
+            "tags": [
+                "TL"
+            ],
+            "boundingBox": {
+                "height": 1026.012987012987,
+                "width": 669.0322773318043,
+                "left": 168.31481746941895,
+                "top": 85.07142857142857
+            },
+            "points": [
+                {
+                    "x": 168.31481746941895,
+                    "y": 85.07142857142857
+                },
+                {
+                    "x": 837.3470948012232,
+                    "y": 85.07142857142857
+                },
+                {
+                    "x": 837.3470948012232,
+                    "y": 1111.0844155844154
+                },
+                {
+                    "x": 168.31481746941895,
+                    "y": 1111.0844155844154
+                }
+            ]
+        },
+        {
+            "id": "Cnc5XdnE6",
+            "type": "RECTANGLE",
+            "tags": [
+                "CL"
+            ],
+            "boundingBox": {
+                "height": 1010.5454545454545,
+                "width": 649.2660550458716,
+                "left": 178.62062786697248,
+                "top": 1129.1298701298701
+            },
+            "points": [
+                {
+                    "x": 178.62062786697248,
+                    "y": 1129.1298701298701
+                },
+                {
+                    "x": 827.886682912844,
+                    "y": 1129.1298701298701
+                },
+                {
+                    "x": 827.886682912844,
+                    "y": 2139.6753246753246
+                },
+                {
+                    "x": 178.62062786697248,
+                    "y": 2139.6753246753246
+                }
+            ]
+        },
+        {
+            "id": "GwJinyQnr",
+            "type": "RECTANGLE",
+            "tags": [
+                "FI"
+            ],
+            "boundingBox": {
+                "height": 1015.7012987012986,
+                "width": 681.9145403287462,
+                "left": 838.1924933103975,
+                "top": 1113.6623376623377
+            },
+            "points": [
+                {
+                    "x": 838.1924933103975,
+                    "y": 1113.6623376623377
+                },
+                {
+                    "x": 1520.1070336391438,
+                    "y": 1113.6623376623377
+                },
+                {
+                    "x": 1520.1070336391438,
+                    "y": 2129.363636363636
+                },
+                {
+                    "x": 838.1924933103975,
+                    "y": 2129.363636363636
+                }
+            ]
+        },
+        {
+            "id": "vAXz4L5BN",
+            "type": "RECTANGLE",
+            "tags": [
+                "RL"
+            ],
+            "boundingBox": {
+                "height": 1013.1233766233765,
+                "width": 671.6087299311927,
+                "left": 843.3453985091743,
+                "top": 90.2272727272727
+            },
+            "points": [
+                {
+                    "x": 843.3453985091743,
+                    "y": 90.2272727272727
+                },
+                {
+                    "x": 1514.954128440367,
+                    "y": 90.2272727272727
+                },
+                {
+                    "x": 1514.954128440367,
+                    "y": 1103.3506493506493
+                },
+                {
+                    "x": 843.3453985091743,
+                    "y": 1103.3506493506493
+                }
+            ],
+            "TL_Path": "C:/Users/20023951/Documents/PhD/GSWA/Geochem_Interrogate/Inv1_Images/granodiorite/189936_spots/cropped/189936_spots_p1_TL_gT8B5VrIy.png",
+            "RL_Path": "C:/Users/20023951/Documents/PhD/GSWA/Geochem_Interrogate/Inv1_Images/granodiorite/189936_spots/cropped/189936_spots_p1_RL_vAXz4L5BN.png",
+            "Mask_Path": "C:/Users/20023951/PycharmProjects/ZirconSeparation/test/files/collage/cropped\\189936_spots_p1_mask.png"
+        }
+    ],
+    "version": "2.2.0"
+}

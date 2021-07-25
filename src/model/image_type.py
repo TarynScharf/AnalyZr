@@ -2,8 +2,8 @@ from enum import Enum
 
 
 class ImageType(Enum):
-    TL = 'Transmitted light'
-    RL = 'Reflected light'
+    TL = 'TL'
+    RL = 'RL'
     MASK = 'Mask'
     COLLAGE = 'Collage'
     CL = 'Cathodoluminescence'

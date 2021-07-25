@@ -75,7 +75,7 @@ class JsonData:
                 "id": hash(self.data_capture_image_path),
                 "name": FileUtils.get_name(self.data_capture_image_path),
                 "path": self.data_capture_image_path,
-                "data capture image type": self.data_capture_image_type,
+                "data capture image type": ImageType(self.data_capture_image_type.value).name,
                 "size": {
                     "width": self.image_width,
                     "height": self.image_height
@@ -160,8 +160,8 @@ class JsonData:
 
         if image_type in [ImageType.TL, ImageType.RL,  ImageType.MASK]:
             pattern = "_"+image_type.file_pattern()
-
             result = re.search(pattern, image_name, re.IGNORECASE)
+
             if result is not None:
                 index = result.start()
                 unique_name =image_name[:index]

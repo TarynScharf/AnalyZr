@@ -30,7 +30,7 @@ def getScale(json_file_path, tag):
 
     spot_length_list = []
     scale_length_list=[]
-    for  path, folder, files in os.walk(json_folder_path):
+    for path, folder, files in os.walk(json_folder_path):
         for name in files:
             sample = name.split('_')[0]
             ext =os.path.splitext(name)[1]
@@ -38,9 +38,12 @@ def getScale(json_file_path, tag):
                 with open(os.path.join(json_folder_path, name), errors='ignore') as jFile:
                     data = json.load(jFile)
                 for region in data['regions']:
-                    if region['type'] == 'RECTANGLE' and region['tags'][0]==tag:
-                        spot_length_list.append(region['boundingBox']['height'])
-                        spot_length_list.append(region['boundingBox']['width'])
+                    if region['type'] == 'RECTANGLE':
+                        #originally they were called SPOT. Later this was changed to SPOT AREA.
+                        #This accomodates current and historical data
+                        if region['tags'][0]==tag or region['tags'][0]=="SPOT AREA":
+                            spot_length_list.append(region['boundingBox']['height'])
+                            spot_length_list.append(region['boundingBox']['width'])
                     elif region['type']=="scale" and region['tags'][0]==tag:
                         scale_length_list.append(region['boundingBox']['height'])
     if len(spot_length_list)==0:
@@ -145,7 +148,8 @@ def get_efd_parameters_for_simplified_contour(contour, has_parent, filter_fn,sim
     input_contour = ensure_contour_is_closed(contour)
 
     coefficients = pyefd.elliptic_fourier_descriptors(input_contour,order)
-    locus = calculate_locus(contour)
+    closed_contour = ensure_contour_is_closed(contour)
+    locus = pyefd.calculate_dc_coefficients(closed_contour)
     if simplify == True:
         reconstructed_points = pyefd.reconstruct_contour(coefficients, locus, number_of_points) # simplify (contour,has_parent)
     else:
@@ -435,60 +439,6 @@ def ensure_contour_is_open(contour):
     contour_copy = np.copy(contour)
     return contour_copy[:-1]
 
-def calculate_locus(contour):
-    """Calculate the :math:`A_0` and :math:`C_0` coefficients of the elliptic Fourier series.
-
-    :param numpy.ndarray contour: A contour array of size ``[M x 2]``.
-    :return: The :math:`A_0` and :math:`C_0` coefficients.
-    :rtype: tuple
-
-    """
-    closed_contour = ensure_contour_is_closed(contour)
-    dxy = np.diff(closed_contour, axis=0)
-    dt = np.sqrt((dxy ** 2).sum(axis=1))
-    t = np.concatenate([([0.]), np.cumsum(dt)])
-    T = t[-1]
-
-    xi = np.cumsum(dxy[:, 0]) - (dxy[:, 0] / dt) * t[1:]
-    A0 = (1 / T) * np.sum(((dxy[:, 0] / (2 * dt)) * np.diff(t ** 2)) + xi * dt)
-    delta = np.cumsum(dxy[:, 1]) - (dxy[:, 1] / dt) * t[1:]
-    C0 = (1 / T) * np.sum(((dxy[:, 1] / (2 * dt)) * np.diff(t ** 2)) + delta * dt)
-
-    # A0 and CO relate to the first point of the contour array as origin.
-    # Adding those values to the coefficients to make them relate to true origin.
-    return contour[0, 0] + A0, contour[0, 1] + C0
-
-def calcEFD(contour, order):
-    input_contour = ensure_contour_is_closed(contour)
-    dxy = np.diff(input_contour,axis=0)  # get the incremental difference between each x and y for each point in the contour. If the contour isn't simplified, this looks to be a pixel-by-pixel change in X and Y.
-    dt = np.sqrt((dxy ** 2).sum(axis=1))  # at each increment, calculate displacement, like pythagoras theorem
-    t = np.cumsum(dt)
-    T = t[-1]  # total  displacement is the last cumulative value in t
-
-    phi = (2 * np.pi * t) / T
-    orders = np.arange(1, order + 1)
-    consts = T / (2 * orders * orders * np.pi * np.pi)
-    phi = phi * orders.reshape((order, -1))
-    d_cos_phi = np.cos(phi) - np.cos(np.roll(phi, 1, axis=1))
-    d_sin_phi = np.sin(phi) - np.sin(np.roll(phi, 1, axis=1))
-
-    a = consts * np.sum((dxy[:, 0] / dt) * d_cos_phi, axis=1)
-    b = consts * np.sum((dxy[:, 0] / dt) * d_sin_phi, axis=1)
-    c = consts * np.sum((dxy[:, 1] / dt) * d_cos_phi, axis=1)
-    d = consts * np.sum((dxy[:, 1] / dt) * d_sin_phi, axis=1)
-
-    coeffs = np.concatenate(  # coeffs is an array of orders (i.e. rows) x [a, b, c, d] i.e. columns
-        [
-            a.reshape((order, 1)),
-            b.reshape((order, 1)),
-            c.reshape((order, 1)),
-            d.reshape((order, 1)),
-        ],
-        axis=1,
-    )
-    return coeffs
-
-
 def calculate_curvature_and_find_maxima(i, contour, hierarchy, polygon_filter,simplify):
     cnt = np.squeeze(contour).tolist()
     composite_contour = CompositeContour(np.squeeze(contour), i)
@@ -735,11 +685,13 @@ def Find_Inter_Point_Distance(point1,point2,contour):
         return partial_contour_distance
     else:
         return remainder_distance
+
 def calculate_distance_between_points(point1,point2):
     diff_x = (point1[0] - point2[0]) ** 2
     diff_y = (point1[1] - point2[1]) ** 2
     distance = math.sqrt(diff_x + diff_y)
     return distance
+
 def slice_contour_by_point_pair(point1, point2, contour):
     contour = ensure_contour_is_open(contour)
 

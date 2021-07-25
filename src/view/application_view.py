@@ -2,12 +2,13 @@ import io
 import tkinter as tk
 import traceback
 from tkinter import *
-from tkinter import filedialog
+from tkinter import filedialog, messagebox
 from tkinter.ttk import *
 
 import os
 
 from src.view.application_drawing import Drawing
+from src.view.ask_csv_or_database_dialog import AskCsvOrDatabase
 from src.view.data_capture_dialog import DataCaptureDialog
 from src.view.measurement_table_dialog import MeasurementDialog
 from src.view.segmentation_dialog import SegmentationDialog
@@ -29,29 +30,27 @@ class View:
         self.master = master
         self.model = model
         master.title("Zircon Shape Analysis")
-        master.geometry('1600x3000')
+        width = master.winfo_screenwidth()
+        height = master.winfo_screenheight()
+        master.state('zoomed')
+        master.geometry(f'{width}x{height}')
 
-        # Reroute exceptions to display a message box to the user
-        #sys.excepthook = self.exception_hook
-
-        self.myFrame = tk.Frame(master, width=1600, height=3000)
+        self.myFrame = tk.Frame(master)
         self.myFrame.pack(expand=True, fill='both')
         self.drawing:Drawing=Drawing(self.myFrame, self.model, self)
 
         self.mainMenu = Menu(self.master)
-        self.fileMenu = Menu(self.mainMenu, tearoff=0)
-        self.mainMenu.add_cascade(label="File", menu=self.fileMenu)
-        self.fileMenu.add_command(label = 'Save Image', command = self.save_image)
 
         self.imagesMenu = Menu(self.mainMenu, tearoff=0)
         self.imagesMenu.add_command(label="Load Images", command=lambda: self.create_data_capture_dialog())
-        self.imagesMenu.add_command(label="Move to Next Image [->]", command=self.NextImage)
-        self.imagesMenu.add_command(label="Move to Previous Image [<-]", command=self.PrevImage)
+        self.imagesMenu.add_command(label="Move to Next Image - shorcut right arrow",state=DISABLED, command=self.NextImage)
+        self.imagesMenu.add_command(label="Move to Previous Image - left arrow",state=DISABLED, command=self.PrevImage)
 
-        self.imagesMenu.add_command(label="Capture Analytical Spot [s]", command=self.drawing.start_spot_capture)
-        self.imagesMenu.add_command(label="Capture Analytical Spot Size [a]", command=self.drawing.RectSpotDraw)
-        self.imagesMenu.add_command(label="Mark Object for Deletion [d]", command=self.drawing.DupDraw)
-        self.imagesMenu.add_command(label="Capture Scale [l]", command=self.drawing.DrawScale)
+        self.imagesMenu.add_command(label="Capture Analytical Spot - s",state=DISABLED, command=self.drawing.start_spot_capture)
+        self.imagesMenu.add_command(label="Capture Analytical Spot Size - a",state=DISABLED, command=self.drawing.RectSpotDraw)
+        self.imagesMenu.add_command(label="Mark Object for Deletion - d",state=DISABLED, command=self.drawing.DupDraw)
+        self.imagesMenu.add_command(label="Capture Scale - l",state=DISABLED, command=self.drawing.DrawScale)
+        self.imagesMenu.add_command(label="Cancel Current Command - esc", state = DISABLED, command = self.drawing.UnbindMouse)
 
         self.imagesMenu.insert_separator(1)
         self.imagesMenu.insert_separator(6)
@@ -86,7 +85,7 @@ class View:
         master.bind("d", lambda e: self.drawing.DupDraw())
         master.bind("<Left>", lambda e: self.PrevImage())
         master.bind("<Right>", lambda e: self.NextImage())
-        master.bind("<Escape>", lambda e: self.UnbindMouse())
+        master.bind("<Escape>", lambda e: self.drawing.UnbindMouse())
         master.bind("p", lambda e: self.drawing.BoundaryDraw())
         master.bind("i", lambda e: self.EditPolygon())
         master.bind("m", lambda e: self.drawing.PointMove())
@@ -103,7 +102,14 @@ class View:
 
     def open_segmentation_toolbox_dialog(self):
         self.drawing.myCanvas.delete('all')
-        SegmentationDialog(self)
+        self.mainMenu.entryconfig('Data Capture', state=DISABLED)
+        self.drawing.UnbindMouse()
+
+        try:
+            SegmentationDialog(self)
+        except ValueError as e:
+            self.open_error_message_popup_window(str(e))
+            return
 
     def exception_hook(self, exception_type, value, tb) -> None:
         """
@@ -171,52 +177,6 @@ class View:
             filename = filedialog.askopenfilename(parent = window, filetypes=[("all files", "*.*")])
             return filename
 
-    def ok_cancel_create_json_files(self, list_of_json_files_to_create):
-        self.ok_cancel_json_window = Toplevel(self.master)
-        self.ok_cancel_json_window.title("Create missing json Files")
-        self.ok_cancel_json_window.minsize(400,100)
-
-        self.ok_cancel_json_text = Label(self.ok_cancel_json_window, text = "Json files are missing. Do you want to create them?")
-        self.ok_cancel_json_text.grid(column = 0, row = 0)
-
-        self.ok_create_jsons = Button(self.ok_cancel_json_window, text="OK", width=5,command=lambda: self.close_popup_window_and_create_jsons(self.ok_cancel_json_window,list_of_json_files_to_create))
-        self.ok_create_jsons.grid(column=1, row=1, padx=2, pady=5)
-
-        self.cancel_create_jsons = Button(self.ok_cancel_json_window, text="Cancel", width=8,command=lambda: self.close_window(self.ok_cancel_json_window))
-        self.ok_create_jsons.grid(column=2, row=1, padx=2, pady=5)
-
-    def close_popup_window_and_create_jsons(self, window, json_file_paths):
-        self.close_window(window)
-        for file_name in json_file_paths:
-            self.model.create_new_json_file(file_name)
-
-    def get_image_info_for_data_capture(self, image_folder_path, json_folder_path, data_capture_image_type, create_json_files):
-        #Does 2 things:
-        # Check for images in the folder, returns error message if there are none.
-        #checks if each image has a corresponding json file. Offers to create the ones that are missing.
-
-        self.jsonList = []
-        if json_folder_path == '':
-            json_folder_path = image_folder_path
-
-        has_images, missing_json_files = self.model.check_for_images_and_jsons(image_folder_path, json_folder_path, data_capture_image_type)
-
-        if has_images == False:
-            error_message_text = f"The folder contains no png images of the type selected for data capture: {data_capture_image_type.value}."
-            self.open_error_message_popup_window(error_message_text)
-            return
-
-        self.model.set_source_folder_paths(image_folder_path,json_folder_path)
-
-        if missing_json_files:
-            if create_json_files == 1:
-                for file in missing_json_files:
-                    self.model.create_new_json_file(file, data_capture_image_type)
-            else:
-                self.ok_cancel_create_json_files(missing_json_files)
-
-
-        self.model.read_sampleID_and_spots_from_json()
 
     def open_error_message_popup_window(self, error_message_text):
         self.errorMessageWindow = Toplevel(self.master)
@@ -231,11 +191,6 @@ class View:
 
     def close_window(self,window):
             window.destroy()
-
-    def load_files(self,image_folder_path,json_folder_path,image_type, create_json_files):
-        self.get_image_info_for_data_capture(image_folder_path, json_folder_path,image_type, create_json_files)
-        self.update_data_capture_display()
-
 
     def SaveBreakChanges(self,new_contour=None):
         image, contours =self.model.SaveBreakChanges(new_contour)
@@ -262,41 +217,51 @@ class View:
 
     def start_measure_shapes(self,mask_path):
         try:
-            image_to_display, contours, spotList, region_measurements = self.model.measure_shapes(mask_path)
+            image_to_display, contours, spotList, region_measurements = self.model.measure_shapes(mask_path,False)
         except ValueError as e:
             self.open_error_message_popup_window(str(e))
             return
         self.drawing.clear_canvas_and_display_image(image_to_display)
-        for spot in spotList:
-            self.drawing.draw_interactive_spot(spot, 'green2')
         for contour in contours:
             self.drawing.draw_contour(contour)
+        for spot in spotList:
+            self.drawing.draw_interactive_spot(spot, 'green2','green')
         MeasurementDialog(self,region_measurements)
 
     def process_all_masks_in_folder(self, mask_file_folder):
         all_folder_measurements = []
         for path,folder,files in os.walk(mask_file_folder):
             for name in files:
-                #extension = FileUtils.get_name_without_extension(name)
                 current_mask_file_path = os.path.join(mask_file_folder,name) #the file path of the current mask we're processing
                 self.DisplayMask(current_mask_file_path)
                 try:
-                    _, _, _, measurements = self.model.measure_shapes(current_mask_file_path)
+                    _, _, _, measurements = self.model.measure_shapes(current_mask_file_path,True)
                     all_folder_measurements = all_folder_measurements+measurements
-
-                    #self.model.push_shape_measurements_to_database(measurements)
                 except ValueError as e:
                     self.open_error_message_popup_window(str(e))
                     return
-        filepath = filedialog.asksaveasfilename(defaultextension='.csv', filetypes=[("CSV Files", "*.csv")], title="Save As")
-        self.model.write_to_csv(filepath, all_folder_measurements)
-        #MeasurementDialog(self, all_folder_measurements)
-        print('Processing complete')
+        AskCsvOrDatabase(self, all_folder_measurements)
+
+    def save_folder_measurements_to_csv(self,all_folder_measurements):
+            filepath = filedialog.asksaveasfilename(defaultextension='.csv', filetypes=[("CSV Files", "*.csv")], title="Save As")
+            if filepath == '':
+                messagebox.showinfo("Information", "Processing cancelled")
+                return
+            self.model.write_to_csv(filepath, all_folder_measurements)
+            messagebox.showinfo("Information", "Processing Complete")
+
+    def save_folder_measurements_to_db(self,all_folder_measurements):
+            self.ensure_database_path_set()
+            try:
+                self.model.push_shape_measurements_to_database(all_folder_measurements)
+            except Exception as e:
+                self.open_error_message_popup_window(str(e))
+                return
+            messagebox.showinfo("Information", "Processing Complete")
 
     def ensure_database_path_set(self):
-        if self.model.database_file_path is not None:
-            return
-
+        #if self.model.database_file_path is not None:
+        #    return
         database_file_path = self.Browse('File',self.master)
         if not database_file_path:
             return
@@ -323,10 +288,10 @@ class View:
         for line in pairs_list:
             self.drawing.draw_interactive_breakline(line)
 
-    def create_spot_capture_dialog(self, event):
+    '''def create_spot_capture_dialog(self, event):
         thisSpot = event.widget.find_withtag('current')[0]
-        all_IDs = self.myCanvas.find_withtag(self.thisSpotID)
-        self.thisSpotID = self.myCanvas.gettags(thisSpot)[0]
+        all_IDs = self.drawing.myCanvas.find_withtag(self.thisSpotID)
+        self.thisSpotID = self.drawing.myCanvas.gettags(thisSpot)[0]
         for ID in all_IDs:
             if not ID == thisSpot:
                 self.labelID = ID
@@ -346,7 +311,7 @@ class View:
 
         self.saveSpotNo = Button(self.spotCaptureWindow, text='Save', command=self.Save)
         self.spotCaptureWindow.bind('<Return>', lambda e: self.Save())
-        self.saveSpotNo.grid(column=0, row=1, pady=5)
+        self.saveSpotNo.grid(column=0, row=1, pady=5)'''
 
     def display_parent_image(self, image_to_display,fileRL,fileTL):
         #This is for optionally loading either the TL or RL image
@@ -383,5 +348,18 @@ class View:
         except Exception as e:
             self.open_error_message_popup_window(str(e))
             return
+
+    def activate_data_capture_options(self):
+        self.imagesMenu.entryconfig("Move to Next Image - shorcut right arrow", state=NORMAL)
+        self.imagesMenu.entryconfig("Move to Previous Image - left arrow", state=NORMAL)
+        self.imagesMenu.entryconfig("Capture Analytical Spot - s", state=NORMAL) #"Capture Analytical Spot [s]"
+        self.imagesMenu.entryconfig("Capture Analytical Spot Size - a", state=NORMAL) #"Capture Analytical Spot Size [a]"
+        self.imagesMenu.entryconfig("Mark Object for Deletion - d", state=NORMAL) #"Mark Object for Deletion [d]"
+        self.imagesMenu.entryconfig("Capture Scale - l", state=NORMAL) #"Capture Scale [l]"
+        self.imagesMenu.entryconfig("Cancel Current Command - esc", state=NORMAL) #"Capture Scale [l]"
+
+
+
+
 
 
