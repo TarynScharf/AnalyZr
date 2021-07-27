@@ -2,8 +2,8 @@
     "asset": {
         "format": "png",
         "id": "92fe01345ca4d0d3794c642899d1b80b",
-        "name": "189936_spots_p1.png",
-        "path": "file:C:/Users/20023951/Documents/PhD/GSWA/Geochem_Interrogate/Inv1_Files/189936_spots_p1.png",
+        "name": "456789_spots_p1.png",
+        "path": "file:C:/456789_spots_p1.png",
         "size": {
             "width": 1685,
             "height": 2382
@@ -136,9 +136,7 @@
                     "y": 1103.3506493506493
                 }
             ],
-            "TL_Path": "C:/Users/20023951/Documents/PhD/GSWA/Geochem_Interrogate/Inv1_Images/granodiorite/189936_spots/cropped/189936_spots_p1_TL_gT8B5VrIy.png",
-            "RL_Path": "C:/Users/20023951/Documents/PhD/GSWA/Geochem_Interrogate/Inv1_Images/granodiorite/189936_spots/cropped/189936_spots_p1_RL_vAXz4L5BN.png",
-            "Mask_Path": "C:/Users/20023951/PycharmProjects/ZirconSeparation/test/files/collage/cropped\\189936_spots_p1_mask.png"
+            
         }
     ],
     "version": "2.2.0"
