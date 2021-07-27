@@ -57,7 +57,6 @@ class Model():
         self.width = 0  # used to set image dimensions on canvas, and in saved images. Ensures saved images have the same dimensions as input images. Important for relating spots to images, spatially.
         self.height = 0  # used to set image dimensions on canvas, and in saved images. Ensures saved images have the same dimensions as input images. Important for relating spots to images, spatially.
         self.breaklines = []
-        self.saveLocation = 'C:/Users/20023951/Documents/PhD/GSWA/Geochem_Interrogate/Binarisation/_o.png'  # where the 1st binarised image will output to
         self.case = ''  # the function of the browse button. I.e. browse for capture, RL or TL
         self.img = None
         self.currentSpotNumber = tk.StringVar()

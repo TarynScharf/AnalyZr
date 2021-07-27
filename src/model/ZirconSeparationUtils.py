@@ -56,7 +56,6 @@ def removeSmallObjects(img, factor = 6):
     
     labelim = label(img, background=0, connectivity=None)
     props = regionprops(labelim)
-    #cv2.imwrite('C:/Users/20023951/Documents/PhD/GSWA/Geochem_Interrogate/test/labelim.png', labelim)
     areaList = []
     for x in range (0,len(props)):
         areaList.append(props[x].area)
@@ -65,9 +64,7 @@ def removeSmallObjects(img, factor = 6):
     if len(areaList)>0:
         maxArea = areaList[0]
         min_size = maxArea/factor
-        #print('min_size', min_size)
         remSmall = remove_small_objects(labelim,min_size, in_place=False)
-        #cv2.imwrite('C:/Users/20023951/Documents/PhD/GSWA/Geochem_Interrogate/test/remSmall.png', remSmall)
     
     return remSmall
 
@@ -719,8 +716,8 @@ def slice_contour_by_point_pair(point1, point2, contour):
 
     return contour1, contour2, start_contour2, end_contour2
 
-def plot(points = [],contour1 = [], contour2= []):
-    imgTL = cv2.imread("C:/Users/20023951/Documents/PhD/GSWA/test_masks/189937_spots_p1_RL_Zbx-wowp74.png")
+def plot(imgTL,points = [],contour1 = [], contour2= []):
+
     plt.imshow(imgTL, cmap='Greys_r')
     matplotlib.use('TkAgg')
     dpi = 100

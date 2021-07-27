@@ -38,11 +38,9 @@ class SegmentationDialog():
         self.RLPath = tk.StringVar()
         self.RLPath.set('')
         self.rlVar = IntVar()
-        #self.RLPath.set('C:/Users/20023951/Documents/PhD/GSWA/Geochem_Interrogate/Inv1_Images/granite/189937_spots/Cropped/189937_spots_p2_RL_SO9e8wLIz.png')
 
         self.TLPath = tk.StringVar()
         self.TLPath.set('')
-        #self.TLPath.set('C:/Users/20023951/Documents/PhD/GSWA/Geochem_Interrogate/Inv1_Images/granite/189937_spots/Cropped/189937_spots_p2_TL_HQ1Cl19PT.png')
         self.tlVar = IntVar()
 
 
@@ -53,7 +51,6 @@ class SegmentationDialog():
 
         self.RL_Label = Label(self.binarisation_frame, text="RL Image")
         self.RL_Label.grid(column=0, row=0)
-        # self.RLPath.set('/home/matthew/Code/ZirconSeparation/test/images/88411_spots_p1_RL__WqO4ozqE.png')
 
         self.RLTextBox = Entry(self.binarisation_frame, width=150, textvariable=self.RLPath)
         self.RLTextBox.grid(column=1, row=0)

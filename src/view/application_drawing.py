@@ -306,27 +306,10 @@ class Drawing():
             if contour.keep_contour == False:
                 continue
             x, y = zip(*contour.reconstructed_points)
-            #sc = plt.scatter(x, y, c=contour.curvature_values, cmap='rainbow', vmin=0, vmax=max_angle, s=15)
+
             xmax, ymax = zip(*contour.max_curvature_coordinates)
             plt.scatter(x, y, c=contour.curvature_values, cmap='rainbow', vmin=0, vmax=max_angle, s=10)
             plt.scatter(xmax, ymax, edgecolor='red',s=20)
-
-            #for i in range(len(contour.reconstructed_points)):
-
-               # if contour.curvature_values[i]>=80:
-                #   plt.scatter(x[i], y[i], c=contour.curvature_values[i], zorder = 3, cmap='rainbow', vmin=0, vmax=max_angle, s=20)
-               # elif contour.curvature_values[i] >= 35 and contour.curvature_values[i]<80:
-                #    plt.scatter(x[i], y[i], c=contour.curvature_values[i], zorder=2, cmap='rainbow', vmin=0, vmax=max_angle, s=20)
-               # else:
-                #    plt.scatter(x[i], y[i], c=contour.curvature_values[i], zorder=1, cmap='rainbow', vmin=0, vmax=max_angle, s=5)
-
-        #cbaxis = fig.add_axes([0.80,0.1,0.03,0.8])
-        #cbar = fig.colorbar(sc, cax=cbaxis)
-        #cbar.set_label('Angle (degrees)', rotation=270, labelpad=20)
-        #plt.savefig(fname='C:\\Users\\20023951\\Documents\\PhD\\Reporting\\Paper1_ZirconSeparationUtility\\images\\K values\\angles.png', dpi=600, facecolor='w', edgecolor='w',
-        #orientation='portrait', format=None,transparent=False,
-        #bbox_inches=None, pad_inches=0.1,frameon=None, metadata=None)
-        #self.plot_angle_displacement_graph(composite_contour_list[0], max_angle)
 
         canvas_data, (canvas_width,canvas_height) = canvas.print_to_buffer()  # taken from here: https://matplotlib.org/3.1.1/gallery/user_interfaces/canvasagg.html
         image_matrix = np.frombuffer(canvas_data, np.uint8).reshape((canvas_height, canvas_width, 4))
@@ -360,8 +343,7 @@ class Drawing():
         plt.xlim((0, 1600))
         plt.ylim(-60,110)
         plt.tight_layout()
-        plt.savefig(fname='C:\\Users\\20023951\\Documents\\PhD\\Reporting\\Paper1_ZirconSeparationUtility\\images\\K values\\angle_displacement_graph.png', dpi=600, orientation='portrait',bbox_inches='tight')
-        #plt.show()
+
 
     def draw_image_data(self, image_data):
         for spot in image_data.spots:
