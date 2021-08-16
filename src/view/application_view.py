@@ -79,17 +79,6 @@ class View:
 
         self.json_folder_path = tk.StringVar()
 
-        # Global bindings (aka shortcuts)
-        master.bind("s", lambda e: self.drawing.start_spot_capture())
-        master.bind("a", lambda e: self.drawing.RectSpotDraw())
-        master.bind("d", lambda e: self.drawing.DupDraw())
-        master.bind("<Left>", lambda e: self.PrevImage())
-        master.bind("<Right>", lambda e: self.NextImage())
-        master.bind("<Escape>", lambda e: self.drawing.UnbindMouse())
-        master.bind("p", lambda e: self.drawing.BoundaryDraw())
-        master.bind("i", lambda e: self.EditPolygon())
-        master.bind("m", lambda e: self.drawing.PointMove())
-        master.bind("l", lambda e: self.drawing.DrawScale())
 
     def save_image(self):
         image_file_name = filedialog.asksaveasfilename(defaultextension='.jpg')
@@ -186,7 +175,7 @@ class View:
         self.errorLabel.grid(column=0, row=0)
 
     def create_data_capture_dialog(self):
-        DataCaptureDialog(self)
+        DataCaptureDialog(self,self.drawing)
 
 
     def close_window(self,window):
@@ -343,11 +332,8 @@ class View:
             self.drawing.draw_contour(polygon)
 
     def get_real_world_distance_for_scale(self, scale_line):
-        try:
-            MeasureScaleDialog(self, self.model, scale_line)
-        except Exception as e:
-            self.open_error_message_popup_window(str(e))
-            return
+        MeasureScaleDialog(self, self.model, scale_line)
+
 
     def activate_data_capture_options(self):
         self.imagesMenu.entryconfig("Move to Next Image - shorcut right arrow", state=NORMAL)

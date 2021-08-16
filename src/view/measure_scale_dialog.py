@@ -27,12 +27,18 @@ class MeasureScaleDialog():
         self.capture_scale_window.protocol("WM_DELETE_WINDOW", self.on_closing)
 
     def save_drawing_object_to_json(self):
-        if self.real_world_distance.get().isdigit:
-            self.scale_line.real_world_distance = self.real_world_distance.get()
-            self.model.save_drawing_object_to_json(self.scale_line)
+        try:
+            if not self.real_world_distance.get().isdigit():
+                raise ValueError(f'No real world distance provided')
             self.capture_scale_window.destroy()
-        else:
-            raise ValueError(f'No real world distance provided')
+            self.scale_line.real_world_distance = self.real_world_distance.get()
+            saved = self.model.save_drawing_object_to_json(self.scale_line)
+            if not saved:
+                self.view.drawing.myCanvas.delete(self.scale_line.group_tag)
+                raise ValueError('Linear scale already exists in image. Only one linear scale is allowed per image.')
+        except Exception as e:
+            self.view.open_error_message_popup_window(str(e))
+
 
     def on_closing(self):
         self.capture_scale_window.destroy()

@@ -136,6 +136,8 @@ class Drawing():
     def BoundaryDraw(self):
         self.myCanvas.unbind("<Button-1>")  # unbind the spot digitisation
         self.myCanvas.unbind("<ButtonPress-1>")  # unbind rectangle digitisation
+        self.myCanvas.unbind("<ButtonPress-2>")
+        self.myCanvas.unbind("<ButtonPress-3>")
         self.myCanvas.unbind("<B1-Motion>")  # unbind rectangle digitisation
         self.myCanvas.unbind("<ButtonRelease-1>")  # unbind rectangle digitisation
         self.myCanvas.bind("<ButtonPress-1>", self.add_polygon_vertex)
@@ -158,6 +160,7 @@ class Drawing():
         self.myCanvas.unbind("<ButtonPress-2>")  # unbind from polygon digitisation
         new_polygon = self.model.add_new_contour(self.contour)
         self.view.SaveBreakChanges(new_polygon)
+        self.myCanvas.bind("<ButtonPress-3>", self.DeleteObject)
 
     def clear_canvas_and_display_image(self, image):
         self.myCanvas.delete('all')
@@ -355,6 +358,9 @@ class Drawing():
         for rectangle in image_data.unwanted_objects:
             self.draw_interactive_rectange(rectangle)
 
+        for polygon in image_data.polygons:
+            self.draw_interactive_polygon(polygon)
+
         if image_data.scale is not None:
             self.draw_interactive_scale(image_data.scale)
 
@@ -372,12 +378,13 @@ class Drawing():
                                   activefill='yellow', activeoutline='yellow',
                                   tags=spot.get_tags())
         self.draw_text(spot.get_text_tags(),spot.x0, spot.y0-15, spot.group_tag, outline_colour)
-        #self.myCanvas.tag_bind(spot.unique_tag, '<ButtonPress-1>', self.view.create_spot_capture_dialog)
 
     def draw_interactive_scale(self, scale):
         self.myCanvas.create_line(scale.x0, scale.y0, scale.x1, scale.y1, width=3, fill='red', activefill='yellow',
                                   tags=scale.get_tags())
-        # self.myCanvas.tag_bind(ID,'<ButtonPress-1>', self.onClick)
+
+    def draw_interactive_polygon(self,polygon):
+        self.myCanvas.create_polygon(polygon.coordinates,fill='', outline='red', activeoutline='yellow', width=2, tags=polygon.get_tags())
 
     def draw_contour(self, contour):
         coords=contour.flatten_coordinates()

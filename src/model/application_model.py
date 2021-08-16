@@ -251,15 +251,19 @@ class Model():
             json.dump(data, updatedFile, indent=4)
 
     def save_drawing_object_to_json(self, object):
-
         with open(os.path.join(self.json_folder_path, self.image_iterator_current[0]), errors='ignore') as jsonFile:
             data = json.load(jsonFile)
-
+        if object.type() == 'SCALE':
+            for region in data['regions']:
+                if region['type']=='SCALE':
+                    return False
         newRegion = object.to_json_data()
         data['regions'].append(newRegion)
 
         with open(os.path.join(self.json_folder_path, self.image_iterator_current[0]), 'w', errors='ignore') as updatedFile:
             json.dump(data, updatedFile, indent=4)
+
+        return True
 
     def update_spot_group_tag_in_json(self, spot, previous_group_tag):
         with open(os.path.join(self.json_folder_path, self.image_iterator_current[0]), errors='ignore') as jsonFile:
@@ -365,8 +369,11 @@ class Model():
                 # check for images
                 if extension.lower() == '.png' and self.is_file_name_of_image_type(name,data_capture_image_type):
                     has_images = True
-                    file_name_without_imagetype = name.replace('_'+data_capture_image_type.name,'')
-                    json_file = os.path.splitext(file_name_without_imagetype)[0] + '.json'
+                    if data_capture_image_type == ImageType.COLLAGE:
+                        file_name_without_imagetype = name.replace('_'+data_capture_image_type.name,'')
+                        json_file = os.path.splitext(file_name_without_imagetype)[0] + '.json'
+                    else:
+                        json_file = os.path.splitext(name)[0] + '.json'
                     has_json = self.does_json_exist(os.path.join(json_folder_path, json_file))
                     if not has_json:
                         json_path = os.path.join(path,name)
@@ -410,8 +417,8 @@ class Model():
                         if sampleID not in self.unique_sample_numbers:  # create a dictionary with unique sample numbers only
                             self.unique_sample_numbers[sampleID] = set()
                             self.sampleList.append(sampleID)
-                            for region in data[
-                                'regions']:  # everytime we find a json with a unique sample number, don't forget to get the spots listed in that json
+                            # everytime we find a json with a unique sample number, don't forget to get the spots listed in that json
+                            for region in data['regions']:
                                 self.unique_sample_numbers[sampleID].add(region['id'])
                         else:  # you might find jsons with existing sample numbers. They may also contains spots, record those spots.
                             for region in data['regions']:
@@ -641,6 +648,7 @@ class Model():
 
     def create_labeled_image(self,region_measurements):
         image_to_display = self.Current_Image.copy()
+
         for measurement in region_measurements:
             # img_to_display = cv2.circle(img_to_display, (int(centroid_List[i][1]), int(centroid_List[i][0])), 3, (0, 0, 255), 2)
             grain_centroid = measurement.grain_centroid

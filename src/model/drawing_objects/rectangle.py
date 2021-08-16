@@ -83,6 +83,9 @@ class ImageRegion(Rectangle):
         self.rl_path = rl_path
         self.mask_path = mask_path
 
+    def type(self):
+        return "RECTANGLE"
+
     def to_json_data(self):
         data = super().to_json_data()
 

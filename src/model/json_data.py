@@ -3,6 +3,7 @@ import os
 import re
 
 from src.model import FileUtils
+from src.model.drawing_objects.polygon import Polygon
 from src.model.drawing_objects.rectangle import Rectangle, RectangleType, ImageRegion
 from src.model.drawing_objects.scale import Scale
 from src.model.drawing_objects.spot import Spot
@@ -34,6 +35,7 @@ class JsonData:
         self.spots = []
         self.image_regions = []
         self.unwanted_objects  = []
+        self.polygons = []
 
         self.image_width = image_width
         self.image_height = image_height
@@ -85,7 +87,6 @@ class JsonData:
         }
         return data
 
-
     @staticmethod
     def from_json_data(data):
         data_capture_image_path = data['asset']['path']
@@ -101,6 +102,10 @@ class JsonData:
             if region['tags'][0] == 'SCALE':
                 scale = Scale.fromJSONData(region)
                 json_data.scale = scale
+
+            if region['type'] =='POLYGON':
+                polygon = Polygon.fromJSONData(region)
+                json_data.polygons.append(polygon)
 
             if region['type'] == 'RECTANGLE':
                 rectangle = Rectangle.fromJSONData(region)

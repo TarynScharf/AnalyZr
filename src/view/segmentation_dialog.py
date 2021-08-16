@@ -16,7 +16,7 @@ class SegmentationDialog():
         self.Segmentation_Window.protocol("WM_DELETE_WINDOW", self.on_closing)
         self.Segmentation_Window.title("Image Segmentation Toolbox")
         self.Segmentation_Window.minsize(400, 110)
-        self.Segmentation_Window.lift()
+        self.Segmentation_Window.lift(aboveThis=self.view.master)
 
         #VARIABLES
 
@@ -144,6 +144,14 @@ class SegmentationDialog():
         self.moveSpot.config(state=DISABLED)
         self.moveSpot.grid(column=1, row=3, padx=2, pady=5, sticky='w')
 
+        self.view.master.unbind("s")
+        self.view.master.unbind("a")
+        self.view.master.unbind("d")
+        self.view.master.unbind("<Left>")
+        self.view.master.unbind("<Right>")
+        self.view.master.unbind("p")
+        self.view.master.unbind("l")
+
     def update_binarisation_button_availability(self):
         if self.rlVar.get() == 1 or self.tlVar.get() == 1:
             self.BinariseButton.config(state = NORMAL)
@@ -226,6 +234,7 @@ class SegmentationDialog():
         #self.measureShapes.config(state=NORMAL)
 
     def measure_shapes(self):
+        self.display_mask()
         mask_path = self.mask_file_path.get()
         self.view.start_measure_shapes(mask_path)
         self.moveSpot.config(state=NORMAL)
@@ -246,7 +255,7 @@ class SegmentationDialog():
 
         region_id = JsonData.get_region_id_from_file_path(image_type, path)
         json_unique_name = JsonData.get_json_file_name_from_path(image_type,path)
-        mask_file_name = FileUtils.get_name_without_extension(json_unique_name) + "_mask"
+        mask_file_name = FileUtils.get_name_without_extension(json_unique_name) + "_" + region_id + "_mask"
         mask_path = os.path.join(mask_folder_path, mask_file_name + '.png')
         json_folder_path = self.view.model.json_folder_path
 
