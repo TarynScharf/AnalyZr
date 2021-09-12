@@ -3,10 +3,13 @@ import tkinter as tk
 import traceback
 from tkinter import *
 from tkinter import filedialog, messagebox
+from tkinter.messagebox import askokcancel
 from tkinter.ttk import *
 
 import os
 
+from src.model import json_data
+from src.model.image_type import ImageType
 from src.view.application_drawing import Drawing
 from src.view.ask_csv_or_database_dialog import AskCsvOrDatabase
 from src.view.data_capture_dialog import DataCaptureDialog
@@ -46,6 +49,7 @@ class View:
         self.imagesMenu.add_command(label="Move to Next Image - shorcut right arrow",state=DISABLED, command=self.NextImage)
         self.imagesMenu.add_command(label="Move to Previous Image - left arrow",state=DISABLED, command=self.PrevImage)
 
+        #self.imagesMenu.add_command(label="Capture Image Region - r",state=DISABLED, command=self.drawing.start_region_capture)
         self.imagesMenu.add_command(label="Capture Analytical Spot - s",state=DISABLED, command=self.drawing.start_spot_capture)
         self.imagesMenu.add_command(label="Capture Analytical Spot Size - a",state=DISABLED, command=self.drawing.RectSpotDraw)
         self.imagesMenu.add_command(label="Mark Object for Deletion - d",state=DISABLED, command=self.drawing.DupDraw)
@@ -60,9 +64,6 @@ class View:
         self.binariseMenu = Menu(self.mainMenu, tearoff=0)
         self.binariseMenu.add_command(label="Load json Files", command=lambda: self.set_json_folder_path('json',self.myFrame))
         self.binariseMenu.add_command(label="Image Segmentation Toolbox", command=self.open_segmentation_toolbox_dialog)
-        #self.binariseMenu.add_command(label="Grain Boundary Capture [p]", command=self.BoundaryDraw)
-        #self.binariseMenu.add_command(label="Polygon Insert Point [i]", command=self.EditPolygon)
-        #self.binariseMenu.add_command(label="Polygon Insert Point [m]", command=self.PointMove)
         self.binariseMenu.insert_separator(1)
         self.mainMenu.add_cascade(label="Segment Images", menu=self.binariseMenu)
         master.config(menu=self.mainMenu)
@@ -78,7 +79,6 @@ class View:
         self.height = None #height of displaed image
 
         self.json_folder_path = tk.StringVar()
-
 
     def save_image(self):
         image_file_name = filedialog.asksaveasfilename(defaultextension='.jpg')
@@ -114,6 +114,35 @@ class View:
         #self.view.show_unexpected_error(error)
         self.open_error_message_popup_window(error)
 
+    def NextMaskImage(self,scroll_instance,segmentation_display):
+        scroll_instance.increment_pointer()
+        mask_file_path = scroll_instance.get_current_mask_file_path()
+        self.DisplayMask(mask_file_path)
+        source_RL_path = scroll_instance.source_files[mask_file_path][0]
+        source_TL_path = scroll_instance.source_files[mask_file_path][1]
+
+        if source_RL_path != '':
+            self.model.set_image_details(source_RL_path, ImageType.RL)
+        if source_TL_path != '':
+            self.model.set_image_details(source_TL_path, ImageType.TL)
+
+        segmentation_display.update_textbox(segmentation_display.RLTextBox,source_RL_path)
+        segmentation_display.update_textbox(segmentation_display.TLTextBox,source_TL_path)
+
+    def PrevMaskImage(self,scroll_instance,segmentation_display):
+        scroll_instance.decrement_pointer()
+        mask_file_path = scroll_instance.get_current_mask_file_path()
+        self.DisplayMask(mask_file_path)
+        source_RL_path = scroll_instance.source_files[mask_file_path][0]
+        source_TL_path = scroll_instance.source_files[mask_file_path][1]
+
+        if source_RL_path != '':
+            self.model.set_image_details(source_RL_path, ImageType.RL)
+        if source_TL_path != '':
+            self.model.set_image_details(source_TL_path, ImageType.TL)
+
+        segmentation_display.update_textbox(segmentation_display.RLTextBox, source_RL_path)
+        segmentation_display.update_textbox(segmentation_display.TLTextBox, source_TL_path)
 
     def NextImage(self):
         self.model.next_image()
@@ -126,7 +155,7 @@ class View:
     def update_data_capture_display(self):
         image, json_data = self.model.get_current_image_for_data_capture()
         self.label['text'] = json_data.get_data_capture_image_name() + '  | Sample ' + str(
-            self.model.get_current_sample_index() + 1) + ' of ' + str(self.model.get_sample_count())
+        self.model.get_current_sample_index() + 1) + ' of ' + str(self.model.get_sample_count())
         self.drawing.clear_canvas_and_display_image(image)
         self.drawing.draw_image_data(json_data)
 
@@ -166,7 +195,6 @@ class View:
             filename = filedialog.askopenfilename(parent = window, filetypes=[("all files", "*.*")])
             return filename
 
-
     def open_error_message_popup_window(self, error_message_text):
         self.errorMessageWindow = Toplevel(self.master)
         self.errorMessageWindow.title("Error")
@@ -176,7 +204,6 @@ class View:
 
     def create_data_capture_dialog(self):
         DataCaptureDialog(self,self.drawing)
-
 
     def close_window(self,window):
             window.destroy()
@@ -191,6 +218,7 @@ class View:
         contour_to_restore = self.model.undo_delete_contour()
         if contour_to_restore is not None:
             self.drawing.draw_contour(contour_to_restore)
+            self.drawing.ensure_contour_does_not_overlie_other_contours(contour_to_restore)
 
     def binariseImages(self,RLPath, TLPath, rlVar, tlVar):
         self.model.set_rl_tl_paths_and_usage(RLPath, TLPath,rlVar, tlVar)
@@ -221,6 +249,8 @@ class View:
         all_folder_measurements = []
         for path,folder,files in os.walk(mask_file_folder):
             for name in files:
+                if os.path.splitext(name)[1].lower() !='.png':
+                    continue
                 current_mask_file_path = os.path.join(mask_file_folder,name) #the file path of the current mask we're processing
                 self.DisplayMask(current_mask_file_path)
                 try:
@@ -263,13 +293,11 @@ class View:
         except Exception as e:
             self.open_error_message_popup_window(str(e))
             return
-
-       # if self.ProcessFolderFlag == True:
-       #     self.model.load_current_mask()
-
         image_pill = self.model.get_threshold_image()
         self.drawing.clear_canvas_and_display_image(image_pill)
-        self.model.extract_contours_from_image('contour')
+        contours = self.model.extract_contours_from_image('contour')
+        for contour in contours:
+            self.drawing.draw_contour(contour)
 
     def separate(self):
         composite_contour_list, image_to_show, is_image_binary, pairs_list = self.model.separate()
@@ -334,7 +362,6 @@ class View:
     def get_real_world_distance_for_scale(self, scale_line):
         MeasureScaleDialog(self, self.model, scale_line)
 
-
     def activate_data_capture_options(self):
         self.imagesMenu.entryconfig("Move to Next Image - shorcut right arrow", state=NORMAL)
         self.imagesMenu.entryconfig("Move to Previous Image - left arrow", state=NORMAL)
@@ -343,6 +370,66 @@ class View:
         self.imagesMenu.entryconfig("Mark Object for Deletion - d", state=NORMAL) #"Mark Object for Deletion [d]"
         self.imagesMenu.entryconfig("Capture Scale - l", state=NORMAL) #"Capture Scale [l]"
         self.imagesMenu.entryconfig("Cancel Current Command - esc", state=NORMAL) #"Capture Scale [l]"
+        self.imagesMenu.entryconfig("Capture Image Region - r", state=NORMAL) #"Capture Scale [l]"
+
+    def check_existence_of_images_and_jsons(self, image_folder_path, json_folder_path, data_capture_image_type, create_json_files):
+        # Does 2 things:
+        # Check for images in the folder, returns error message if there are none.
+        # checks if each image has a corresponding json file. Offers to create the ones that are missing.
+
+        if json_folder_path == '':
+            json_folder_path = image_folder_path
+
+        has_images, missing_json_files = self.model.check_for_images_and_jsons(image_folder_path, json_folder_path, data_capture_image_type)
+
+        if has_images == False:
+            error_message_text = f"The folder contains no png images of the type selected for data capture: {data_capture_image_type.value}."
+            self.open_error_message_popup_window(error_message_text)
+            return False, None
+
+        if not missing_json_files:
+            return True, None
+
+        if create_json_files == 1:
+            for file in missing_json_files:
+                self.model.create_new_json_file(file, data_capture_image_type)
+            return True, None
+
+        return False, missing_json_files
+    '''
+    def read_and_display_image_data(self,image_folder_path,json_folder_path,for_data_capture = True):
+        self.model.set_source_folder_paths(image_folder_path, json_folder_path)
+        self.model.read_sampleID_and_spots_from_json()
+
+        if for_data_capture:
+            self.update_data_capture_display()
+            self.activate_data_capture_options()
+
+        if not for_data_capture:
+            image_pill = self.model.get_threshold_image()
+            self.drawing.clear_canvas_and_display_image(image_pill)
+            contours = self.model.extract_contours_from_image('contour')
+            for contour in contours:
+                self.drawing.draw_contour(contour)
+
+        if browse_for_files_window is not None:
+            browse_for_files_window.destroy()'''
+
+    def get_json_path(self):
+        if self.model.json_folder_path == '':
+            messagebox.showinfo("Error", "Select a json file folder")
+            return None
+        else:
+            return self.model.json_folder_path
+
+
+
+
+
+
+
+
+
 
 
 

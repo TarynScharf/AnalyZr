@@ -76,8 +76,6 @@ class DataCaptureDialog():
     def activate_buttons(self,val):
         self.create_json_files_check_button.config(state=NORMAL)
         self.load_json_folder_check_button.config(state=NORMAL)
-        self.json_folder_text_box.config(state=NORMAL)
-        self.json_folder_Label.config(state=NORMAL)
         self.ok_load_files_for_capture.config(state=NORMAL)
         self.browse_for_json_folder.config(state=NORMAL)
 
@@ -110,44 +108,49 @@ class DataCaptureDialog():
 
     def load_files(self):
         image_folder = self.image_folder_path.get()
+        json_folder = self.json_folder_path.get()
+        image_type = ImageType(self.image_type_combobox.get())
+        create_json_files = self.create_json_var.get()
+
         if image_folder == '':
             messagebox.showinfo("Error", "Select an image folder")
             self.browse_for_files_window.lift()
             return
-        json_folder = self.json_folder_path.get()
         if json_folder == '':
             messagebox.showinfo("Error", "Select a json file folder")
             self.browse_for_files_window.lift()
             return
 
         try:
-            data_capture_image_type = ImageType(self.image_type_combobox.get())
+            data_capture_image_type = image_type
         except Exception as e:
-            messagebox.showinfo("Error", "Select a data capture image type")
+            messagebox.showinfo("Error", "Select an image type")
             self.browse_for_files_window.lift()
             return
 
-        create_json_files = self.create_json_var.get()
-        files_exist, missing_json_files = self.check_existence_of_images_and_jsons(image_folder, json_folder, data_capture_image_type, create_json_files)
+        files_exist, missing_json_files = self.view.check_existence_of_images_and_jsons(image_folder, json_folder, data_capture_image_type, create_json_files)
         if files_exist:
-            self.read_and_display_image_data(image_folder,json_folder)
+            self.read_and_display_image_data(image_folder, json_folder)
         else:
             if missing_json_files is not None:
-                answer = askokcancel(title='Create missing json files',message='Do you wish to create missing json files?')
-
+                answer = askokcancel(title='Create missing json files', message='Do you wish to create missing json files?')
                 if answer == True:
-                    self.browse_for_files_window.destroy()
                     for file_name in missing_json_files:
                         self.view.model.create_new_json_file(file_name, data_capture_image_type)
-        self.read_and_display_image_data(image_folder, json_folder)
+            self.read_and_display_image_data(image_folder, json_folder)
+
+        self.view.master.bind("<Left>", lambda e: self.PrevImage())
+        self.view.master.bind("<Right>", lambda e: self.NextImage())
+        self.view.master.bind("<Escape>", lambda e: self.drawing.UnbindMouse())
+        self.view.master.bind("p", lambda e: self.drawing.BoundaryDraw())
         self.view.master.bind("s", lambda e: self.drawing.start_spot_capture())
         self.view.master.bind("a", lambda e: self.drawing.RectSpotDraw())
         self.view.master.bind("d", lambda e: self.drawing.DupDraw())
-        self.view.master.bind("<Left>", lambda e: self.view.PrevImage())
-        self.view.master.bind("<Right>", lambda e: self.view.NextImage())
-        self.view.master.bind("<Escape>", lambda e: self.drawing.UnbindMouse())
-        self.view.master.bind("p", lambda e: self.drawing.BoundaryDraw())
         self.view.master.bind("l", lambda e: self.drawing.DrawScale())
+        self.view.master.bind("r", lambda e: self.drawing.start_region_capture())
+
+        self.browse_for_files_window.destroy()
+
 
     def check_existence_of_images_and_jsons(self, image_folder_path, json_folder_path, data_capture_image_type, create_json_files):
         # Does 2 things:

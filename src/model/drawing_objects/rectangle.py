@@ -19,13 +19,17 @@ class Rectangle(DrawingObject):
         self.y0 = min(y0,y1)
         self.x1 = max(x0,x1)
         self.y1 = max(y0,y1)
-        self.type = type
+        self.rectangle_type = type
 
     def get_colour(self):
-        if self.type == RectangleType.SPOT_AREA:
+        if self.rectangle_type == RectangleType.SPOT_AREA:
             return 'blue'
-        else:
+        elif self.rectangle_type == RectangleType.DUPLICATE:
             return 'red'
+        elif self.rectangle_type == RectangleType.RL:
+            return 'lawn green'
+        elif self.rectangle_type == RectangleType.TL:
+            return 'violet red'
 
     def get_height_and_width(self):
         height = abs(self.y0 - self.y1)
@@ -47,6 +51,9 @@ class Rectangle(DrawingObject):
         else:
             return Rectangle(x1, y1, x2, y2, type, group_tag)
 
+    def type(self):
+        return self.rectangle_type
+
     def to_json_data(self):
         height, width = self.get_height_and_width()
 
@@ -55,7 +62,7 @@ class Rectangle(DrawingObject):
         left = self.x0
         right = self.x1
 
-        newRegion = {"id": self.group_tag, "type": "RECTANGLE", "tags": [self.type.value],
+        newRegion = {"id": self.group_tag, "type": "RECTANGLE", "tags": [self.rectangle_type.value],
                      "boundingBox": {"height": height, "width": width, "left": left, "top": top},
                      "points": [{"x": left, "y": top}, {"x": right, "y": top}, {"x": right, "y": bottom},
                                 {"x": left, "y": bottom}]}

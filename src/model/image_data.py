@@ -43,9 +43,9 @@ class ImageData:
         for region in data['regions']:
             if region['type'] == 'RECTANGLE':
                 rectangle = Rectangle.fromJSONData(region)
-                if rectangle.type == RectangleType.DUPLICATE:
+                if rectangle.rectangle_type == RectangleType.DUPLICATE:
                     image_data.unwanted_objects.append(rectangle)
-                if rectangle.type in[RectangleType.SPOT_AREA, RectangleType.SPOT]:
+                if rectangle.rectangle_type in[RectangleType.SPOT_AREA, RectangleType.SPOT]:
                     image_data.spot_areas.append(rectangle)
 
             if region['type'] == 'POINT':

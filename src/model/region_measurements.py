@@ -18,7 +18,8 @@ class RegionMeasurement():
         maxFeret,
         contour,
         image_dimensions,
-        mask_image
+        mask_image,
+        scale
     ):
         self.sampleid = sampleid
         self.image_id = image_id # unique code coming from VOTT, per image
@@ -37,6 +38,7 @@ class RegionMeasurement():
         self.contour =contour
         self.image_region =image_dimensions
         self.mask_image =mask_image
+        self.scale = scale
 
         self.formFactor = (4 * math.pi * area) / (perimeter ** 2)
         self.roundness = (4 * area) / (math.pi * (major_axis_length ** 2))
@@ -70,7 +72,8 @@ class RegionMeasurement():
                 round_decimals_for_display(self.maxFeret),
                 image_dimensions,
                 self.mask_image,
-                contour
+                contour,
+                self.scale
                 ]
 
     @staticmethod
@@ -96,7 +99,8 @@ class RegionMeasurement():
                 'max_feret',
                 'image_dimensions',
                 'mask_image',
-                'contour'
+                'contour',
+                'scale'
                 ]
     @staticmethod
     def get_database_headers():

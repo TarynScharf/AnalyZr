@@ -5,6 +5,7 @@ from tkinter import *
 from tkinter.ttk import *
 
 import PIL
+import shapely
 from PIL import ImageTk
 import matplotlib
 import matplotlib.pyplot as plt
@@ -16,6 +17,7 @@ from src.model.drawing_objects.contour import Contour
 from src.model.drawing_objects.rectangle import Rectangle, RectangleType
 from src.model.drawing_objects.spot import Spot
 import src.model.drawing_objects.scale as scale
+from src.view.specify_region_type import RegionTypeDialog
 
 
 class Drawing():
@@ -48,8 +50,6 @@ class Drawing():
         self.breakline = None
 
         self.displayed_image = None
-
-
 
     def DeleteObject(self, event):
         thisObj = event.widget.find_withtag('current')[0]  # get the object clicked on
@@ -143,7 +143,6 @@ class Drawing():
         self.myCanvas.bind("<ButtonPress-1>", self.add_polygon_vertex)
         self.myCanvas.bind("<ButtonPress-2>", self.PolyComplete)
 
-
         groupTag = 'boundary' + str(uuid.uuid4())  # polygon and points(ovals)will have the same group tag
         self.contour = Contour(groupTag)
 
@@ -153,8 +152,6 @@ class Drawing():
         self.contour.add_vertex(x0,y0)
         self.myCanvas.delete(self.contour.unique_tag)
         self.draw_contour(self.contour)
-
-
 
     def PolyComplete(self, event):
         self.myCanvas.unbind("<ButtonPress-2>")  # unbind from polygon digitisation
@@ -199,12 +196,17 @@ class Drawing():
         self.draw_text(self.spot.get_text_tags(),self.spot.x0-7, self.spot.y0-7, self.spot.group_tag, 'green2')
         self.spot = None
 
+    #def start_region_capture(self):
+    #    #image region is temporarily tagged as RL. This tag is later overwritten
+    #    self.rectangleType = RectangleType.RL
+    #    self.RectDraw()
+
     def RectSpotDraw(self):
         self.rectangleType = RectangleType.SPOT_AREA
         self.RectDraw()
 
     def RectDraw(self):
-        self.myCanvas.unbind("<Button-1>")  # unbind the spot digitisation
+        self.myCanvas.unbind("<Button-1>")
         self.myCanvas.bind("<ButtonPress-1>", self.RectStartCoords)
         self.myCanvas.bind("<B1-Motion>", self.RectUpdateCoords)
         self.myCanvas.bind("<ButtonRelease-1>", self.RectFinalCoords)
@@ -216,12 +218,14 @@ class Drawing():
         if self.rectangleType == RectangleType.SPOT_AREA:
             groupSuffix = 'NewSpot'
             self.text_label="spot area"
+        #if self.rectangleType == RectangleType.RL:
+        #    groupSuffix = 'Region'
+        #    self.text_label = 'Image Region'
 
         groupTag = groupSuffix +str(uuid.uuid4())
         rectStart_x = self.myCanvas.canvasx(event.x)
         rectStart_y = self.myCanvas.canvasy(event.y)
         self.rectangle = Rectangle(rectStart_x,rectStart_y, rectStart_x + 1,rectStart_y + 1,self.rectangleType,groupTag)
-
         self.draw_interactive_rectange(self.rectangle)
 
     def RectUpdateCoords(self, event):
@@ -230,6 +234,10 @@ class Drawing():
         self.myCanvas.coords(self.rectangle.unique_tag, self.rectangle.x0, self.rectangle.y0, self.rectangle.x1, self.rectangle.y1)
 
     def RectFinalCoords(self, event):
+        #if self.rectangle.type() == RectangleType.RL:
+        #    RegionTypeDialog(self.view, self.model,self.rectangle)
+
+        #else:
         self.draw_interactive_rectange(self.rectangle)
         self.model.save_drawing_object_to_json(self.rectangle)
 
@@ -279,7 +287,6 @@ class Drawing():
     def finish_breakline(self,mouse_event):
         self.model.insert_new_breakline_to_pairslist(self.breakline)
         self.breakline = None
-
 
     def display_spots_during_measurement(self,spotList):
 
@@ -347,7 +354,6 @@ class Drawing():
         plt.ylim(-60,110)
         plt.tight_layout()
 
-
     def draw_image_data(self, image_data):
         for spot in image_data.spots:
             self.draw_interactive_spot(spot,'cyan','blue')
@@ -371,7 +377,7 @@ class Drawing():
         self.myCanvas.create_rectangle(rectangle.x0, rectangle.y0, rectangle.x1, rectangle.y1, width=3, outline=rectangle.get_colour(), activefill='yellow',
                                        activeoutline='yellow',
                                        tags=rectangle.get_tags())
-        self.draw_text(rectangle.get_text_tags(), rectangle.x0, rectangle.y0 - 15,rectangle.type.value, rectangle.get_colour())
+        self.draw_text(rectangle.get_text_tags(), rectangle.x0, rectangle.y0 - 15, rectangle.rectangle_type.value, rectangle.get_colour())
 
     def draw_interactive_spot(self, spot,colour,outline_colour):
         self.myCanvas.create_oval(spot.x0 - 6, spot.y0 - 6, spot.x0 + 6, spot.y0 + 6, width=2, outline=outline_colour, fill=colour,
@@ -398,6 +404,15 @@ class Drawing():
         else:
             self.myCanvas.create_line(coords, fill='red', activefill='yellow', width=2, tags=contour.get_tags())  # if there are only two points, its a line not a polygon
 
+    def ensure_contour_does_not_overlie_other_contours(self, undeleted_contour):
+        new_contour = shapely.geometry.Polygon(undeleted_contour.paired_coordinates()).buffer(0)
+        items_to_raise_above_new_contour = []
+        for key,contour in self.model.contours_by_group_tag.items():
+            if undeleted_contour.group_tag == contour.group_tag:
+                pass
+            if new_contour.contains(shapely.geometry.Polygon(contour.paired_coordinates()).buffer(0)):
+                self.myCanvas.tag_lower(undeleted_contour.unique_tag,contour.unique_tag)
+                break
 
     def draw_text(self,tags,x,y,text,colour):
         self.myCanvas.create_text(x, y, text=text, fill=colour, font=("Helvetica", 8, "bold"), tags=tags)

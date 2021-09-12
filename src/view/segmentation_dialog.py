@@ -7,6 +7,7 @@ from tkinter.ttk import *
 from src.model import FileUtils
 from src.model.image_type import ImageType
 from src.model.json_data import JsonData
+from src.model.mask_scroll_instance import MaskScrollInstance
 
 
 class SegmentationDialog():
@@ -130,7 +131,7 @@ class SegmentationDialog():
         self.Folder_TextBox = Entry(self.Measure_Shapes_Frame, width=100, textvariable=self.Mask_Folder_Location)
         self.Folder_TextBox.grid(column=1, row=2,sticky='w')
 
-        self.Browse_Folder = Button(self.Measure_Shapes_Frame, text="...", width=5, command=lambda: self.Browse('Folder'))
+        self.Browse_Folder = Button(self.Measure_Shapes_Frame, text="...", width=5, command=self.browse_for_mask_folder)
         self.Browse_Folder.grid(column=2, row=2, padx=3, pady=5,sticky='w')
 
         self.Process_Folder = Button(self.Measure_Shapes_Frame, text="Process Folder", width=20, command=self.process_mask_folder)
@@ -151,6 +152,27 @@ class SegmentationDialog():
         self.view.master.unbind("<Right>")
         self.view.master.unbind("p")
         self.view.master.unbind("l")
+
+    def browse_for_mask_folder(self):
+        json_folder_path = self.view.get_json_path()
+        if json_folder_path == None:
+            return
+        self.Browse('Folder')
+        mask_folder_path = self.Folder_Location.get()
+        scroll = MaskScrollInstance(self.view)
+        scroll.create_mask_list(mask_folder_path)
+        source_files = scroll.create_source_file_dictionary(json_folder_path)
+        if not source_files:
+            self.update_textbox(self.Folder_TextBox,'')
+            return
+        self.set_shortcuts_for_mask_scrolling(scroll)
+        self.view.NextMaskImage(scroll, self)
+
+    def set_shortcuts_for_mask_scrolling(self, scroll_instance):
+        self.view.master.bind("<Left>", lambda e: self.view.PrevMaskImage(scroll_instance,self))
+        self.view.master.bind("<Right>", lambda e: self.view.NextMaskImage(scroll_instance,self))
+        self.view.master.bind("<Escape>", lambda e: self.drawing.UnbindMouse())
+        self.view.master.bind("p", lambda e: self.drawing.BoundaryDraw())
 
     def update_binarisation_button_availability(self):
         if self.rlVar.get() == 1 or self.tlVar.get() == 1:
@@ -227,11 +249,18 @@ class SegmentationDialog():
         return path
 
     def display_mask(self):
+        mask_path = self.mask_file_path.get()
         self.view.DisplayMask(self.mask_file_path.get())
-        #self.update_textbox(self.mask_filepath_textbox, self.mask_file_path.get())
-        #self.update_textbox(self.TLTextBox, self.view.model.tl_path)
-        #self.update_textbox(self.RLTextBox, self.view.model.rl_path)
-        #self.measureShapes.config(state=NORMAL)
+        self.update_textbox(self.mask_filepath_textbox,mask_path)
+        region_id = JsonData.get_region_id_from_file_path(ImageType.MASK,mask_path)
+        json_file = JsonData.get_json_file_name_from_path(ImageType.MASK,mask_path)
+        data = JsonData.load_all(os.path.join(self.view.model.json_folder_path,json_file))
+        image_region = data.get_image_region(region_id)
+        tl_path = image_region.tl_path if image_region.tl_path is not None else ""
+        rl_path = image_region.rl_path if image_region.rl_path is not None else ""
+        self.update_textbox(self.TLTextBox, tl_path)
+        self.update_textbox(self.RLTextBox, rl_path)
+        self.measureShapes.config(state=NORMAL)
 
     def measure_shapes(self):
         self.display_mask()
@@ -255,7 +284,7 @@ class SegmentationDialog():
 
         region_id = JsonData.get_region_id_from_file_path(image_type, path)
         json_unique_name = JsonData.get_json_file_name_from_path(image_type,path)
-        mask_file_name = FileUtils.get_name_without_extension(json_unique_name) + "_" + region_id + "_mask"
+        mask_file_name = FileUtils.get_name_without_extension(json_unique_name) + "_mask_" + region_id
         mask_path = os.path.join(mask_folder_path, mask_file_name + '.png')
         json_folder_path = self.view.model.json_folder_path
 
@@ -277,6 +306,8 @@ class SegmentationDialog():
         json_data = JsonData.load_all(json_file_path)
         image_region_object = json_data.get_image_region(region_id)
         image_region_object.mask_path = mask_path
+        image_region_object.rl_path = self.view.model.rl_path
+        image_region_object.tl_path = self.view.model.tl_path
         json_data.save_changes_to_region(region_id,image_region_object,json_file_path) #if region id is '' then get the first region id
 
         self.view.model.set_mask_path(mask_path)

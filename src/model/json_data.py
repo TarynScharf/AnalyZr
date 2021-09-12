@@ -109,16 +109,20 @@ class JsonData:
 
             if region['type'] == 'RECTANGLE':
                 rectangle = Rectangle.fromJSONData(region)
-                if rectangle.type == RectangleType.DUPLICATE:
+                if rectangle.rectangle_type == RectangleType.DUPLICATE:
                     json_data.unwanted_objects.append(rectangle)
-                elif rectangle.type == RectangleType.SPOT_AREA:
+                elif rectangle.rectangle_type == RectangleType.SPOT_AREA:
                     json_data.spot_areas.append(rectangle)
-                elif rectangle.type == RectangleType.SPOT:
+                elif rectangle.rectangle_type == RectangleType.SPOT:
                     # Reading legacy spots that were stored as rectangles
                     x,y = rectangle.get_centroid()
                     spot = Spot(x,y,rectangle.group_tag)
                     json_data.spots.append(spot)
-                elif rectangle.type in [RectangleType.RL, RectangleType.TL, RectangleType.CL, RectangleType.FI]:
+                    #in earlier versions of this application, spot rectangles could record both a spot and spot area.
+                    #These rectangles were called SPOT.
+                    #This has since been replaced with spots and spot-areas. But this supports legacy data.
+                    json_data.spot_areas.append(rectangle)
+                elif rectangle.rectangle_type in [RectangleType.RL, RectangleType.TL, RectangleType.CL, RectangleType.FI]:
                     json_data.image_regions.append(rectangle)
                 else:
                     pass
@@ -170,9 +174,10 @@ class JsonData:
             if result is not None:
                 index = result.start()
                 unique_name =image_name[:index]
-            elif image_type == ImageType.MASK:
-                #legacy format
-                unique_name = '_'.join(image_name.split('_')[:3])
+
+            #elif image_type == ImageType.MASK:
+            #    #legacy format
+            #    unique_name = '_'.join(image_name.split('_')[:3])
             else:
                 raise ValueError(f'File name {image_name} is not of the correct form. No {pattern} found.')
 

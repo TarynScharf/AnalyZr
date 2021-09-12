@@ -20,6 +20,7 @@ import shapely
 import skimage.segmentation
 from PIL import ImageTk
 from PIL import Image
+from matplotlib import pyplot
 from scipy import ndimage
 
 from src.model import ZirconSeparationUtils, zircon_measurement_utils, FileUtils
@@ -211,7 +212,6 @@ class Model():
             polygon = Contour(groupID, coordinate_pairs)
             self.contours_by_group_tag[polygon.group_tag] = polygon
             count_contour += 1
-
 
         return list(self.contours_by_group_tag.values())
 
@@ -414,7 +414,8 @@ class Model():
                         image_name = data['asset']['name']
                         self.jsonList.append([json_file_name, image_name])
                         sampleID = image_name.split("_")[0]
-                        if sampleID not in self.unique_sample_numbers:  # create a dictionary with unique sample numbers only
+                        # create a dictionary with unique sample numbers only
+                        if sampleID not in self.unique_sample_numbers:
                             self.unique_sample_numbers[sampleID] = set()
                             self.sampleList.append(sampleID)
                             # everytime we find a json with a unique sample number, don't forget to get the spots listed in that json
@@ -551,14 +552,12 @@ class Model():
 
         if json_data.scale is not None:
             scale_in_real_world_distance = json_data.scale.real_world_distance / json_data.scale.get_length()
-        elif len(json_data.spot_areas)>0:
+        else:
             average_scale = ZirconSeparationUtils.getScale(json_file_path, 'SPOT')
             if average_scale is not None:
                 scale_in_real_world_distance = 30 / average_scale
             else:
                 raise ValueError('No scale available in sample')
-        else:
-            raise ValueError('No scale available in sample')
 
         return spotList,regions_to_remove_from_mask_image,scale_in_real_world_distance,region_object
 
@@ -584,12 +583,20 @@ class Model():
     def remove_unwanted_objects_from_binary_image(self,objects_to_remove):
         for unwanted_object in objects_to_remove:
             x,y = unwanted_object.get_centroid()
-            label = self.threshold[int(y), int(x)]
-            if label != 0:
-                self.threshold[self.threshold == label] = 0
+            try:
+                label = self.threshold[int(y), int(x)]
+                if label != 0:
+
+                    self.threshold[self.threshold == label] = 0
+            except:
+                #if it fails, it's because the centroid is out of bounds of the image
+                #this can happen when the image has been cropped by the user after data capture
+                #in this case, the object to be deleted is in contact with the image boundary, and will be removed as a boundary object
+                pass
 
     def find_spots_in_region(self,label,spotList,contoursFinal):
         spots = []
+
         for contour in contoursFinal:
             polygon = shapely.geometry.Polygon(np.squeeze(contour))  # create a shapely polygon
             representative_point = polygon.representative_point()  # using the shapely polygon, get a point inside the polygon
@@ -635,7 +642,9 @@ class Model():
                     minFeret = minFeret * micPix,
                     contour = contour,
                     image_dimensions =image_region,
-                    mask_image =mask_file_path)
+                    mask_image =mask_file_path,
+                    scale = micPix
+            )
             if len(spots_in_region)==0:
                 measurements.append(measurement)
             else:
@@ -658,6 +667,25 @@ class Model():
 
         return image_to_display
 
+
+    def iterate_though_mask_images(self,mask_folder_path):
+        if self.json_folder_path is None:
+            raise ValueError('No json folder path selected')
+
+        if mask_folder_path is None:
+            raise ValueError('No mask folder path selected')
+
+        self.set_source_folder_paths(mask_folder_path, self.json_folder_path)
+
+        for path,folder,files in os.walk(mask_folder_path):
+            for name in files:
+                if os.path.splitext(name)[1].lower() !='.png':
+                    continue
+                current_mask_file_path = os.path.join(mask_folder_path,name) #the file path of the current mask we're processing
+                self.view.DisplayMask(current_mask_file_path)
+                self.read_sampleID_and_spots_from_json()
+                self.view.update_data_capture_display()
+
     def measure_shapes(self, mask_path, process_folder):
         if self.json_folder_path is None:
             raise ValueError('No json folder path selected')
@@ -667,11 +695,10 @@ class Model():
             region_id = data.image_regions[0].group_tag
         self.spots_in_measured_image = None
         self.contours_by_group_tag={}
-
-        self.threshold = self.preprocess_image_for_measurement(mask_path)
-
         spotList, regions_to_remove_from_mask_image, scale_in_real_world_units, image_region = self.read_spots_unwanted_scale_from_json(data,json_file_path,region_id)
         self.spots_in_measured_image = spotList
+
+        self.threshold = self.preprocess_image_for_measurement(mask_path)
         self.remove_unwanted_objects_from_binary_image(regions_to_remove_from_mask_image)
 
         region_measurements = self.create_measurement_table(sample_id,region_id,image_region,scale_in_real_world_units,mask_path,spotList)
@@ -687,7 +714,7 @@ class Model():
         return image_to_display, contours, spotList,region_measurements
 
     def binariseImages(self):
-        self.breaklines == []
+        self.breaklines.clear()
         self.contours_by_group_tag = {}
         self.deleted_contours = []
 
@@ -750,10 +777,19 @@ class Model():
         for contour in contourList:
             newXY = contour.inverted_paired_coordinates() # skimage takes x,y in opposite order
             contMask = skimage.draw.polygon2mask((mask.shape[0], mask.shape[1]), newXY)
-            skimage.segmentation.expand_labels(contMask,1)
+            test_if_contour_is_internal = mask + contMask
+            if max(np.unique(test_if_contour_is_internal))>1:
+                boundary = skimage.segmentation.find_boundaries(contMask, mode='inner')
+                contMask = contMask.astype(int) +boundary.astype(int)
+                contMask[contMask==2]=0
+                boundary = None
+            else:
+                skimage.segmentation.expand_labels(contMask,1)
             mask = mask + contMask
             mask[mask == 2] = 0
-        return mask
+            test_if_contour_is_internal = None
+
+        return mask.astype('uint8')
 
     def erode_small_artifacts(self,mask):
         kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE,(2, 2))  # this large structuring element is designed to  remove bubble rims
@@ -763,6 +799,8 @@ class Model():
         self.threshold = opening_uint8
 
     def set_source_folder_paths(self, image_folder_path, json_folder_path):
+        #rest the json pointer so that the list starts at 0 and iterates through all jsons and images
+        self.current_image_index = 0
         self.jsonList = []
         self.image_folder_path = image_folder_path
         self.set_json_folder_path(json_folder_path)
@@ -899,3 +937,5 @@ class Model():
         sample_id = JsonData.get_sample_id_from_file_path(path)
 
         return json_file_path, region_id,sample_id
+
+
