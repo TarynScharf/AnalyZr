@@ -181,7 +181,7 @@ class Model():
         #draw breaklines on the image to divide touching grains
         for breakline in self.breaklines:
             updatedMask = cv2.line(updatedMask, (int(breakline.x0), int(breakline.y0)), (int(breakline.x1),int(breakline.y1)), (0,0,0),2)
-        self.breaklines = []
+        self.breaklines.clear()
 
         #label each grain uniquely
         updatedMask[updatedMask > 0] = 255

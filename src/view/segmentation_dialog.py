@@ -199,6 +199,19 @@ class SegmentationDialog():
         self.measureShapes.config(state=NORMAL)
 
     def display_image(self, image_type):
+        RLPath = self.RLPath.get()
+        TLPath = self.TLPath.get()
+        rlVar = self.rlVar.get()
+        tlVar = self.tlVar.get()
+
+        if image_type==ImageType.RL:
+            image_path = self.RLPath.get()
+        elif image_type == ImageType.TL:
+            image_path = self.TLPath.get()
+        elif image_type == ImageType.MASK:
+            image_path = self.mask_file_path.get()
+        self.view.model.set_image_details(image_path, image_type)
+
         image = self.view.model.set_current_image(image_type)
         self.view.drawing.display_image(image)
 
