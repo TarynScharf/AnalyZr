@@ -158,6 +158,8 @@ class Drawing():
         new_polygon = self.model.add_new_contour(self.contour)
         self.view.SaveBreakChanges(new_polygon)
         self.myCanvas.bind("<ButtonPress-3>", self.DeleteObject)
+        self.myCanvas.unbind("<ButtonPress-1>")
+        self.contour = None
 
     def clear_canvas_and_display_image(self, image):
         self.myCanvas.delete('all')
