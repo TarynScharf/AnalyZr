@@ -139,8 +139,8 @@ class DataCaptureDialog():
                         self.view.model.create_new_json_file(file_name, data_capture_image_type)
             self.read_and_display_image_data(image_folder, json_folder)
 
-        self.view.master.bind("<Left>", lambda e: self.PrevImage())
-        self.view.master.bind("<Right>", lambda e: self.NextImage())
+        self.view.master.bind("<Left>", lambda e: self.view.PrevImage())
+        self.view.master.bind("<Right>", lambda e: self.view.NextImage())
         self.view.master.bind("<Escape>", lambda e: self.drawing.UnbindMouse())
         self.view.master.bind("p", lambda e: self.drawing.BoundaryDraw())
         self.view.master.bind("s", lambda e: self.drawing.start_spot_capture())

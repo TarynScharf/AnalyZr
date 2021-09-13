@@ -370,7 +370,7 @@ class View:
         self.imagesMenu.entryconfig("Mark Object for Deletion - d", state=NORMAL) #"Mark Object for Deletion [d]"
         self.imagesMenu.entryconfig("Capture Scale - l", state=NORMAL) #"Capture Scale [l]"
         self.imagesMenu.entryconfig("Cancel Current Command - esc", state=NORMAL) #"Capture Scale [l]"
-        self.imagesMenu.entryconfig("Capture Image Region - r", state=NORMAL) #"Capture Scale [l]"
+        #self.imagesMenu.entryconfig("Capture Image Region - r", state=NORMAL) #"Capture Scale [l]"
 
     def check_existence_of_images_and_jsons(self, image_folder_path, json_folder_path, data_capture_image_type, create_json_files):
         # Does 2 things:
