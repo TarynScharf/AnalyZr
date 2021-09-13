@@ -322,9 +322,11 @@ class Model():
         self.rl_image = None
         self.tl_image = None
 
+
         self.threshold = cv2.imread(mask_path)[:, :, 0]
         self.threshold[self.threshold > 0] = 255
-
+        self.height =self.threshold.shape[0]
+        self.width = self.threshold.shape[1]
         jsonName = JsonData.get_json_file_name_from_path(image_type,mask_path)
         sampleid = JsonData.get_sample_id_from_file_path(mask_path)
         regionID = JsonData.get_region_id_from_file_path(image_type, mask_path)
