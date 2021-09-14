@@ -150,8 +150,8 @@ class SegmentationDialog():
         self.view.master.unbind("d")
         self.view.master.unbind("<Left>")
         self.view.master.unbind("<Right>")
-        self.view.master.unbind("p")
         self.view.master.unbind("l")
+        self.view.master.bind("p", lambda e: self.view.drawing.BoundaryDraw())
 
     def browse_for_mask_folder(self):
         json_folder_path = self.view.get_json_path()

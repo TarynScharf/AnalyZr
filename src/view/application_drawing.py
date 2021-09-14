@@ -48,7 +48,6 @@ class Drawing():
         self.imgCount = 0
         self.rectangleType = None
         self.breakline = None
-
         self.displayed_image = None
 
     def DeleteObject(self, event):
@@ -288,7 +287,7 @@ class Drawing():
 
     def finish_breakline(self,mouse_event):
         self.model.insert_new_breakline_to_pairslist(self.breakline)
-        self.breakline = None
+
 
     def display_spots_during_measurement(self,spotList):
 
