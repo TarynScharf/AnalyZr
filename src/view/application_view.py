@@ -117,7 +117,17 @@ class View:
     def NextMaskImage(self,scroll_instance,segmentation_display):
         scroll_instance.increment_pointer()
         mask_file_path = scroll_instance.get_current_mask_file_path()
+
+        json_file_path, region_id, sample_id = self.model.get_json_path_and_region_id_and_sample_id_for_measurement(mask_file_path)
+        data = JsonData.load_all(json_file_path)
+        if region_id == None or region_id == '':
+            region_id = data.image_regions[0].group_tag
+        spotList, regions_to_remove_from_mask_image, scale_in_real_world_units, image_region = self.model.read_spots_unwanted_scale_from_json(data, json_file_path, region_id)
+        self.model.spots_in_measured_image = spotList
         self.DisplayMask(mask_file_path)
+        for spot in spotList:
+            self.drawing.draw_interactive_spot(spot, 'green2', 'green')
+
         source_RL_path = scroll_instance.source_files[mask_file_path][0]
         source_TL_path = scroll_instance.source_files[mask_file_path][1]
 
@@ -132,7 +142,16 @@ class View:
     def PrevMaskImage(self,scroll_instance,segmentation_display):
         scroll_instance.decrement_pointer()
         mask_file_path = scroll_instance.get_current_mask_file_path()
+
+        json_file_path, region_id, sample_id = self.model.get_json_path_and_region_id_and_sample_id_for_measurement(mask_file_path)
+        data = JsonData.load_all(json_file_path)
+        if region_id == None or region_id == '':
+            region_id = data.image_regions[0].group_tag
+        spotList, regions_to_remove_from_mask_image, scale_in_real_world_units, image_region = self.model.read_spots_unwanted_scale_from_json(data, json_file_path, region_id)
+        self.model.spots_in_measured_image = spotList
         self.DisplayMask(mask_file_path)
+        for spot in spotList:
+            self.drawing.draw_interactive_spot(spot, 'green2', 'green')
         source_RL_path = scroll_instance.source_files[mask_file_path][0]
         source_TL_path = scroll_instance.source_files[mask_file_path][1]
 

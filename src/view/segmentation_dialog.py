@@ -100,7 +100,6 @@ class SegmentationDialog():
         self.saveChanges = Button(self.segmentation_label_frame, text="Save Changes", command=self.view.SaveBreakChanges)
         self.saveChanges.config(state=DISABLED)
         self.saveChanges.grid(column=2, row=0, padx=2, pady=5)
-
         self.grain_boundary_capture = Button(self.segmentation_label_frame, text="Grain Boundary Capture [p]", command=self.view.drawing.BoundaryDraw)
         self.grain_boundary_capture.config(state = DISABLED)
         self.grain_boundary_capture.grid(column=3, row=0, padx=2, pady=5)
@@ -141,7 +140,7 @@ class SegmentationDialog():
         self.measureShapes.config(state=DISABLED)
         self.measureShapes.grid(column=0, row=3, padx=2, pady=5,sticky='w')
 
-        self.moveSpot = Button(self.Measure_Shapes_Frame, text="Reposition spot", command=self.view.drawing.PointMove)
+        self.moveSpot = Button(self.Measure_Shapes_Frame, text="Reposition spot [q]", command=self.view.drawing.PointMove)
         self.moveSpot.config(state=DISABLED)
         self.moveSpot.grid(column=1, row=3, padx=2, pady=5, sticky='w')
 
@@ -165,8 +164,19 @@ class SegmentationDialog():
         if not source_files:
             self.update_textbox(self.Folder_TextBox,'')
             return
+
         self.set_shortcuts_for_mask_scrolling(scroll)
         self.view.NextMaskImage(scroll, self)
+        self.moveSpot.config(state=NORMAL)
+        self.breakLine.config(state=NORMAL)
+        self.saveMask.config(state = NORMAL)
+        self.Separate_Button.config(state = NORMAL)
+        self.saveChanges.config(state = NORMAL)
+        self.undo_delete.config(state = NORMAL)
+        self.grain_boundary_capture.config(state = NORMAL)
+        self.BinariseButton.config(state=NORMAL)
+        self.view.master.bind("q",lambda e:self.view.drawing.PointMove())
+
 
     def set_shortcuts_for_mask_scrolling(self, scroll_instance):
         self.view.master.bind("<Left>", lambda e: self.view.PrevMaskImage(scroll_instance,self))

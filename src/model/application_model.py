@@ -911,7 +911,7 @@ class Model():
             self.Current_Image = np.stack((image,) * 3, axis=-1)
         else:
             raise Exception('Unknown image type '+str(image_type))
-        return  Image.fromarray(self.Current_Image)
+        return Image.fromarray(self.Current_Image)
 
     def find_spot_in_measured_image_by_unique_tag(self, unique_tag):
         for spot in self.spots_in_measured_image:

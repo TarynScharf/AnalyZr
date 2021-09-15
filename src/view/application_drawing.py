@@ -193,8 +193,9 @@ class Drawing():
     def FinishPointMove(self, moveEvent):
         self.myCanvas.unbind("<B1-Motion>")
         self.myCanvas.unbind("<ButtonRelease-1>")
+        self.myCanvas.unbind("<Button-1>")
         self.model.update_spot_location_in_json_file(self.spot)
-        self.draw_text(self.spot.get_text_tags(),self.spot.x0-7, self.spot.y0-7, self.spot.group_tag, 'green2')
+        self.draw_text(self.spot.get_text_tags(),self.spot.x0-7, self.spot.y0-7, self.spot.group_tag, 'green')
         self.spot = None
 
     #def start_region_capture(self):
