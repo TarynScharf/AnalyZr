@@ -3,6 +3,7 @@ import uuid
 from datetime import datetime
 from tkinter import *
 from tkinter.ttk import *
+from tkinter import messagebox
 
 import PIL
 import shapely
@@ -17,6 +18,7 @@ from src.model.drawing_objects.contour import Contour
 from src.model.drawing_objects.rectangle import Rectangle, RectangleType
 from src.model.drawing_objects.spot import Spot
 import src.model.drawing_objects.scale as scale
+from src.view.save_spot_dialog import SaveSpotDialog
 from src.view.specify_region_type import RegionTypeDialog
 
 
@@ -51,13 +53,38 @@ class Drawing():
         self.displayed_image = None
 
     def DeleteObject(self, event):
+        if len(event.widget.find_withtag('current'))==0:
+            return
         thisObj = event.widget.find_withtag('current')[0]  # get the object clicked on
         tags = self.myCanvas.gettags(thisObj)  # find the groupID for the object clicked on
         group_tag = tags[0]
         if group_tag == 'Image':
             return
         self.myCanvas.delete(group_tag)  # delete everything with the same groupID
-        self.model.DeleteObject(group_tag) #pass the groupID and coordinates to the model, where everything else is handled
+        self.model.DeleteObject(group_tag.replace('spot_','')) #pass the groupID and coordinates to the model, where everything else is handled
+
+    def start_spot_review(self):
+        self.myCanvas.unbind("<Button-1>")
+        self.myCanvas.bind("<Button-1>", self.get_spot_review_info)
+
+    def get_spot_review_info(self,event):
+        thisObj = event.widget.find_withtag('current')[0]
+        group_tag = self.myCanvas.gettags(thisObj)[0]
+        unique_tag = self.myCanvas.gettags(thisObj)[1]
+        if 'spot_' in group_tag:
+            spot = self.model.get_spot_data(group_tag,unique_tag)
+            is_new_spot = False
+            spot_capture_dialog=SaveSpotDialog(self.view, self,spot, is_new_spot)
+            self.myCanvas.wait_window(spot_capture_dialog.spotCaptureWindow)
+            spot_tags = spot.get_tags()
+            text_tags = spot.get_text_tags()
+            self.myCanvas.itemconfig(spot.unique_text_tag, text=spot.group_tag.replace('spot_', ''), state=tk.NORMAL, tags=(text_tags[0], text_tags[1]))
+            self.myCanvas.itemconfig(spot.unique_tag, tags=(spot_tags[0], spot_tags[1]))
+
+            self.myCanvas.unbind("<Button-1>")
+        else:
+            tk.messagebox.showwarning(message = "Please select an analytical spot to review." )
+
 
     def ScrollWithMouseWheel(self, event):
         self.myCanvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
@@ -66,16 +93,39 @@ class Drawing():
         self.spotCaptureWindow = Toplevel(self.view.master)
         self.spotCaptureWindow.title("Capture Spot Number")
         self.spotCaptureWindow.minsize(300, 100)
+
         self.spotCaptureLabel = Label(self.spotCaptureWindow, text='Spot ID')
-        self.spotCaptureLabel.grid(column=0, row=0)
+        self.spotCaptureLabel.grid(column=0, row=0,padx=2, pady=2, sticky = 'EW')
+
         self.currentSpotNumber = tk.StringVar()
         self.currentSpotNumber.set('')
+        self.note = tk.StringVar()
+        self.note.set('')
+
         self.currentSpotTextBox = Entry(self.spotCaptureWindow, width=20, textvariable=self.currentSpotNumber)
-        self.currentSpotTextBox.grid(column=1, row=0)
+        self.currentSpotTextBox.grid(column=1, row=0,padx=2, pady=2, sticky = 'W')
         self.currentSpotTextBox.focus()
+
+        #Added to address reviewer comments: CL texture
+        self.CL_texture_label = Label(self.spotCaptureWindow, text='CL texture')
+        self.CL_texture_label.grid(column=0, row=1,padx=2, pady=2, sticky = 'W')
+        self.CL_texture_combobox = Combobox(self.spotCaptureWindow,width=20,values=['homogenous',
+                                                                                    'oscillitory',
+                                                                                    'patchy',
+                                                                                    'sector',
+                                                                                    'other'])
+        self.CL_texture_combobox.grid(column=1,row=1,padx=2, pady=2, sticky = 'W')
+
+        # Added to address reviewer comments: Freeform notes:
+        self.notes_label = Label(self.spotCaptureWindow, text='Comments:', width = 50)
+        self.notes_label.grid(column=0, row=2,padx=2, pady=2,sticky ='W')
+        self.notes_textbox = Entry(self.spotCaptureWindow,textvariable=self.note)
+        self.notes_textbox.grid(column=1, row=2,padx=2, pady=2,sticky ='W')
 
         def save_spot():
             spotNo = self.currentSpotNumber.get()
+            cl_texture = self.CL_texture_combobox.get()
+            notes = self.notes_textbox.get().strip()
             userText = spotNo.strip()
             '''try:
                 testNum = float(userText)
@@ -86,6 +136,8 @@ class Drawing():
             try:
                 if is_new_spot:
                     spot.group_tag = userText
+                    spot.cl_texture =  cl_texture
+                    spot.notes = notes
                     self.model.add_new_spot(spot)
                 else:
                     self.model.update_spot_id(spot, userText)
@@ -98,9 +150,9 @@ class Drawing():
             self.currentSpotTextBox.delete(first=0, last=100)
             self.spotCaptureWindow.destroy()
 
-        self.saveSpotNo = Button(self.spotCaptureWindow, text='Save', command=save_spot)
+        self.saveSpotNo = Button(self.spotCaptureWindow, text='Save', command=save_spot, width =10)
         self.spotCaptureWindow.bind('<Return>', lambda e: save_spot())
-        self.saveSpotNo.grid(column=0, row=1, pady=5)
+        self.saveSpotNo.grid(column=1, row=3, padx=2, pady=2, sticky ='W')
 
     def DrawScale(self):
         #this allows the user to draw a two-point line to capture a length scale which exists in some of the images
@@ -195,7 +247,7 @@ class Drawing():
         self.myCanvas.unbind("<ButtonRelease-1>")
         self.myCanvas.unbind("<Button-1>")
         self.model.update_spot_location_in_json_file(self.spot)
-        self.draw_text(self.spot.get_text_tags(),self.spot.x0-7, self.spot.y0-7, self.spot.group_tag, 'green')
+        self.draw_text(self.spot.get_text_tags(),self.spot.x0-7, self.spot.y0-7, self.spot.group_tag.replace('spot_',''), 'green')
         self.spot = None
 
     #def start_region_capture(self):
@@ -249,7 +301,14 @@ class Drawing():
         groupTag = 'NewSpot_'+str(uuid.uuid4())
         this_spot = Spot(x0,y0, groupTag)
         self.draw_interactive_spot(this_spot,'cyan','blue')
-        self.open_save_spot_dialog(this_spot, True)
+        spot_capture_dialog = SaveSpotDialog(self.view, self, this_spot, True)
+        self.myCanvas.wait_window(spot_capture_dialog.spotCaptureWindow)
+        spot_tags = this_spot.get_tags()
+        text_tags = this_spot.get_text_tags()
+        self.myCanvas.itemconfig(this_spot.unique_text_tag, text=this_spot.group_tag.replace('spot_',''), state=tk.NORMAL, tags=('spot_'+text_tags[0],text_tags[1]))
+        self.myCanvas.itemconfig(this_spot.unique_tag, tags=('spot_'+spot_tags[0],spot_tags[1]))
+        #self.currentSpotTextBox.delete(first=0, last=100)
+        #self.spotCaptureWindow.destroy()
 
     def UnbindMouse(self):
         self.myCanvas.unbind("<ButtonPress-1>")  # unbind rectangle digitisation
@@ -288,7 +347,6 @@ class Drawing():
 
     def finish_breakline(self,mouse_event):
         self.model.insert_new_breakline_to_pairslist(self.breakline)
-
 
     def display_spots_during_measurement(self,spotList):
 
@@ -385,7 +443,7 @@ class Drawing():
         self.myCanvas.create_oval(spot.x0 - 6, spot.y0 - 6, spot.x0 + 6, spot.y0 + 6, width=2, outline=outline_colour, fill=colour,
                                   activefill='yellow', activeoutline='yellow',
                                   tags=spot.get_tags())
-        self.draw_text(spot.get_text_tags(),spot.x0, spot.y0-15, spot.group_tag, outline_colour)
+        self.draw_text(spot.get_text_tags(),spot.x0, spot.y0-15, spot.group_tag.replace('spot_',''), outline_colour)
 
     def draw_interactive_scale(self, scale):
         self.myCanvas.create_line(scale.x0, scale.y0, scale.x1, scale.y1, width=3, fill='red', activefill='yellow',

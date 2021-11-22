@@ -81,11 +81,11 @@ class Rectangle(DrawingObject):
         self.y1 += delta_y
 
 class ImageRegion(Rectangle):
-    def __init__(self, x0, y0, x1, y1, type, group_tag, tl_path=None, rl_path=None, mask_path=None):
+    def __init__(self, x0, y0, x1, y1, type, group_tag, tl_path=None, rl_path=None, mask_path=None,):
         super().__init__(x0, y0, x1, y1, type, group_tag)
 
         #for an image region, the group-tag corresponds to the region id
-
+        self.id = group_tag
         self.tl_path = tl_path
         self.rl_path = rl_path
         self.mask_path = mask_path
@@ -96,6 +96,8 @@ class ImageRegion(Rectangle):
     def to_json_data(self):
         data = super().to_json_data()
 
+        if self.id:
+            data['id'] = self.id
         if self.tl_path:
             data ["TL_Path"] = self.tl_path
         if self.rl_path:

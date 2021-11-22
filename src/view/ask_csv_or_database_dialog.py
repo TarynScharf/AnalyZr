@@ -1,10 +1,7 @@
-import tkinter as tk
+
 from tkinter import *
-from tkinter import filedialog
-from tkinter.messagebox import askokcancel
 from tkinter.ttk import *
 
-from src.model.image_type import ImageType
 
 class AskCsvOrDatabase():
 

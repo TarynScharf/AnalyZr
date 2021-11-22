@@ -15,6 +15,7 @@ class DataCaptureDialog():
         self.browse_for_files_window.title("Select Images for Data Capture")
         self.browse_for_files_window.minsize(400, 100)
         self.browse_for_files_window.lift()
+        self.browse_for_files_window.grab_set()
 
         #VARIABLES
         self.json_folder_path = tk.StringVar()
@@ -127,17 +128,25 @@ class DataCaptureDialog():
             messagebox.showinfo("Error", "Select an image type")
             self.browse_for_files_window.lift()
             return
+        try:
+            files_exist, missing_json_files = self.view.check_existence_of_images_and_jsons(image_folder, json_folder, data_capture_image_type, create_json_files)
+            if files_exist:
+                self.read_and_display_image_data(image_folder, json_folder, data_capture_image_type)
+            else:
+                if missing_json_files is not None:
+                    answer = askokcancel(title='Create missing json files', message='Do you wish to create missing json files?')
+                    if answer == True:
+                        for file_name in missing_json_files:
+                            self.view.model.create_new_json_file(file_name, data_capture_image_type, json_folder)
+                        self.read_and_display_image_data(image_folder, json_folder,data_capture_image_type)
+                    else:
+                        messagebox.showinfo("Error", "No json files in the selected folder.")
+                        self.browse_for_files_window.lift()
+                        return
+        except Exception as e:
+            messagebox.showinfo('Error', e)
+            return
 
-        files_exist, missing_json_files = self.view.check_existence_of_images_and_jsons(image_folder, json_folder, data_capture_image_type, create_json_files)
-        if files_exist:
-            self.read_and_display_image_data(image_folder, json_folder)
-        else:
-            if missing_json_files is not None:
-                answer = askokcancel(title='Create missing json files', message='Do you wish to create missing json files?')
-                if answer == True:
-                    for file_name in missing_json_files:
-                        self.view.model.create_new_json_file(file_name, data_capture_image_type)
-            self.read_and_display_image_data(image_folder, json_folder)
 
         self.view.master.bind("<Left>", lambda e: self.view.PrevImage())
         self.view.master.bind("<Right>", lambda e: self.view.NextImage())
@@ -148,38 +157,11 @@ class DataCaptureDialog():
         self.view.master.bind("d", lambda e: self.drawing.DupDraw())
         self.view.master.bind("l", lambda e: self.drawing.DrawScale())
         self.view.master.bind("r", lambda e: self.drawing.start_region_capture())
-
         self.browse_for_files_window.destroy()
 
-
-    def check_existence_of_images_and_jsons(self, image_folder_path, json_folder_path, data_capture_image_type, create_json_files):
-        # Does 2 things:
-        # Check for images in the folder, returns error message if there are none.
-        # checks if each image has a corresponding json file. Offers to create the ones that are missing.
-
-        if json_folder_path == '':
-            json_folder_path = image_folder_path
-
-        has_images, missing_json_files = self.view.model.check_for_images_and_jsons(image_folder_path, json_folder_path, data_capture_image_type)
-
-        if has_images == False:
-            error_message_text = f"The folder contains no png images of the type selected for data capture: {data_capture_image_type.value}."
-            self.view.open_error_message_popup_window(error_message_text)
-            return False, None
-
-        if not missing_json_files:
-            return True, None
-
-        if create_json_files == 1:
-            for file in missing_json_files:
-                self.view.model.create_new_json_file(file, data_capture_image_type)
-            return True, None
-
-        return False, missing_json_files
-
-    def read_and_display_image_data(self,image_folder_path,json_folder_path):
+    def read_and_display_image_data(self,image_folder_path,json_folder_path,data_capture_image_type):
         self.view.model.set_source_folder_paths(image_folder_path, json_folder_path)
-        self.view.model.read_sampleID_and_spots_from_json()
+        self.view.model.read_sampleID_and_spots_from_json(data_capture_image_type,image_folder_path)
         self.view.update_data_capture_display()
         self.view.activate_data_capture_options()
         self.browse_for_files_window.destroy()

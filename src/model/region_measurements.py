@@ -45,6 +45,9 @@ class RegionMeasurement():
         self.compactness = (math.sqrt((4 / math.pi) * area) / major_axis_length)
         self.aspectRatio = major_axis_length / minor_axis_length
 
+        self.cl_texture = ''
+        self.notes = ''
+
     def as_list(self):
         contour = ",".join([f'({x},{y})'for x,y in np.squeeze(self.contour)])
         image_dimensions = f'{int(round(self.image_region.y0))},{int(round(self.image_region.x0))},{int(round(self.image_region.y1))},{int(round(self.image_region.x1))}'
@@ -73,7 +76,9 @@ class RegionMeasurement():
                 image_dimensions,
                 self.mask_image,
                 contour,
-                self.scale
+                self.scale,
+                self.cl_texture,
+                self.notes
                 ]
 
     @staticmethod
@@ -100,7 +105,9 @@ class RegionMeasurement():
                 'image_dimensions',
                 'mask_image',
                 'contour',
-                'scale'
+                'scale',
+                'cl_texture',
+                'notes'
                 ]
     @staticmethod
     def get_database_headers():

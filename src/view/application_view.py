@@ -1,9 +1,10 @@
+import copy
 import io
 import tkinter as tk
 import traceback
 from tkinter import *
 from tkinter import filedialog, messagebox
-from tkinter.messagebox import askokcancel
+
 from tkinter.ttk import *
 
 import os
@@ -52,6 +53,7 @@ class View:
         #self.imagesMenu.add_command(label="Capture Image Region - r",state=DISABLED, command=self.drawing.start_region_capture)
         self.imagesMenu.add_command(label="Capture Analytical Spot - s",state=DISABLED, command=self.drawing.start_spot_capture)
         self.imagesMenu.add_command(label="Capture Analytical Spot Size - a",state=DISABLED, command=self.drawing.RectSpotDraw)
+        self.imagesMenu.add_command(label="Review Analytical Spot",state=DISABLED, command=self.drawing.start_spot_review)
         self.imagesMenu.add_command(label="Mark Object for Deletion - d",state=DISABLED, command=self.drawing.DupDraw)
         self.imagesMenu.add_command(label="Capture Scale - l",state=DISABLED, command=self.drawing.DrawScale)
         self.imagesMenu.add_command(label="Cancel Current Command - esc", state = DISABLED, command = self.drawing.UnbindMouse)
@@ -92,6 +94,7 @@ class View:
     def open_segmentation_toolbox_dialog(self):
         self.drawing.myCanvas.delete('all')
         self.mainMenu.entryconfig('Data Capture', state=DISABLED)
+        self.mainMenu.entryconfig('Segment Images', state=DISABLED)
         self.drawing.UnbindMouse()
 
         try:
@@ -115,53 +118,126 @@ class View:
         self.open_error_message_popup_window(error)
 
     def NextMaskImage(self,scroll_instance,segmentation_display):
+
+        if self.model.threshold is not None:
+            mask_file_path = scroll_instance.get_current_mask_file_path()
+            self.model.write_mask_to_png(mask_file_path)
+            self.model.breaklines.clear()
+
         scroll_instance.increment_pointer()
         mask_file_path = scroll_instance.get_current_mask_file_path()
 
-        json_file_path, region_id, sample_id = self.model.get_json_path_and_region_id_and_sample_id_for_measurement(mask_file_path)
-        data = JsonData.load_all(json_file_path)
+        self.model.json_file, region_id, sample_id = self.model.get_json_path_and_region_id_and_sample_id_for_measurement(mask_file_path, ImageType.MASK)
+        data = JsonData.load_all(self.model.json_file)
         if region_id == None or region_id == '':
             region_id = data.image_regions[0].group_tag
-        spotList, regions_to_remove_from_mask_image, scale_in_real_world_units, image_region = self.model.read_spots_unwanted_scale_from_json(data, json_file_path, region_id)
+        spotList, regions_to_remove_from_mask_image, scale_in_real_world_units, image_region = self.model.read_spots_unwanted_scale_from_json(data, self.model.json_file, region_id, mask_scrolling = True)
         self.model.spots_in_measured_image = spotList
-        self.DisplayMask(mask_file_path)
-        for spot in spotList:
-            self.drawing.draw_interactive_spot(spot, 'green2', 'green')
 
         source_RL_path = scroll_instance.source_files[mask_file_path][0]
         source_TL_path = scroll_instance.source_files[mask_file_path][1]
+        img_found = False
 
         if source_RL_path != '':
             self.model.set_image_details(source_RL_path, ImageType.RL)
-        if source_TL_path != '':
+            img = cv2.imread(source_RL_path)
+            img_found = True
+        else:
+            self.model.rl_path = source_RL_path
+
+        if source_TL_path != '' and img_found == False:
             self.model.set_image_details(source_TL_path, ImageType.TL)
+            if img_found == False:
+                img = cv2.imread(source_TL_path)
+            img_found = True
+        else:
+            self.model.tl_path = source_TL_path
+
+        if img_found == False:
+            img = cv2.imread(mask_file_path)
+
+        image_pill = Image.fromarray(img)
+        self.drawing.clear_canvas_and_display_image(image_pill)
+
+        #self.DisplayMask(mask_file_path)
+        try:
+            region = self.model.load_mask_from_file(mask_file_path)
+        except Exception as e:
+            self.open_error_message_popup_window(str(e))
+            return
+
+        contours = self.model.extract_contours_from_image('contour')
+        for contour in contours:
+            self.drawing.draw_contour(contour)
+
+        for spot in spotList:
+            self.drawing.draw_interactive_spot(spot, 'green2', 'green')
 
         segmentation_display.update_textbox(segmentation_display.RLTextBox,source_RL_path)
         segmentation_display.update_textbox(segmentation_display.TLTextBox,source_TL_path)
 
+        self.label['text'] = FileUtils.get_name(mask_file_path) + f" | {scroll_instance.pointer +1} of {len(scroll_instance.mask_list)}"
+
     def PrevMaskImage(self,scroll_instance,segmentation_display):
+        if self.model.threshold is not None:
+            mask_file_path = scroll_instance.get_current_mask_file_path()
+            self.model.write_mask_to_png(mask_file_path)
+            self.model.breaklines.clear()
+
         scroll_instance.decrement_pointer()
         mask_file_path = scroll_instance.get_current_mask_file_path()
-
-        json_file_path, region_id, sample_id = self.model.get_json_path_and_region_id_and_sample_id_for_measurement(mask_file_path)
-        data = JsonData.load_all(json_file_path)
+        self.model.json_file, region_id, sample_id = self.model.get_json_path_and_region_id_and_sample_id_for_measurement(mask_file_path,ImageType.MASK)
+        data = JsonData.load_all(self.model.json_file)
         if region_id == None or region_id == '':
             region_id = data.image_regions[0].group_tag
-        spotList, regions_to_remove_from_mask_image, scale_in_real_world_units, image_region = self.model.read_spots_unwanted_scale_from_json(data, json_file_path, region_id)
+        spotList, regions_to_remove_from_mask_image, scale_in_real_world_units, image_region = self.model.read_spots_unwanted_scale_from_json(data, self.model.json_file, region_id)
         self.model.spots_in_measured_image = spotList
         self.DisplayMask(mask_file_path)
         for spot in spotList:
             self.drawing.draw_interactive_spot(spot, 'green2', 'green')
+
         source_RL_path = scroll_instance.source_files[mask_file_path][0]
         source_TL_path = scroll_instance.source_files[mask_file_path][1]
+        img_found = False
 
         if source_RL_path != '':
             self.model.set_image_details(source_RL_path, ImageType.RL)
-        if source_TL_path != '':
+            img = cv2.imread(source_RL_path)
+            img_found = True
+        else:
+            self.model.rl_path = source_RL_path
+
+        if source_TL_path != '' and img_found == False:
             self.model.set_image_details(source_TL_path, ImageType.TL)
+            if img_found == False:
+                img = cv2.imread(source_TL_path)
+            img_found = True
+        else:
+            self.model.tl_path = source_TL_path
+
+        if img_found == False:
+            img = cv2.imread(mask_file_path)
+
+        image_pill = Image.fromarray(img)
+        self.drawing.clear_canvas_and_display_image(image_pill)
+
+        # self.DisplayMask(mask_file_path)
+        try:
+            region = self.model.load_mask_from_file(mask_file_path)
+        except Exception as e:
+            self.open_error_message_popup_window(str(e))
+            return
+
+        contours = self.model.extract_contours_from_image('contour')
+        for contour in contours:
+            self.drawing.draw_contour(contour)
+
+        for spot in spotList:
+            self.drawing.draw_interactive_spot(spot, 'green2', 'green')
 
         segmentation_display.update_textbox(segmentation_display.RLTextBox, source_RL_path)
         segmentation_display.update_textbox(segmentation_display.TLTextBox, source_TL_path)
+        self.label['text'] = FileUtils.get_name(mask_file_path) + f" | {scroll_instance.pointer+1} of {len(scroll_instance.mask_list)}"
 
     def NextImage(self):
         self.model.next_image()
@@ -173,10 +249,11 @@ class View:
 
     def update_data_capture_display(self):
         image, json_data = self.model.get_current_image_for_data_capture()
-        self.label['text'] = json_data.get_data_capture_image_name() + '  | Sample ' + str(
-        self.model.get_current_sample_index() + 1) + ' of ' + str(self.model.get_sample_count())
-        self.drawing.clear_canvas_and_display_image(image)
-        self.drawing.draw_image_data(json_data)
+        if image is not None and json_data is not None:
+            self.label['text'] = json_data.get_data_capture_image_name() + '  | Sample ' + str(
+            self.model.get_current_sample_index() + 1) + ' of ' + str(self.model.get_sample_count())
+            self.drawing.clear_canvas_and_display_image(image)
+            self.drawing.draw_image_data(json_data)
 
     def display_image(self, image):
         self.drawing.clear_canvas_and_display_image(image)
@@ -243,8 +320,8 @@ class View:
         self.model.set_rl_tl_paths_and_usage(RLPath, TLPath,rlVar, tlVar)
         try:
             image,contours,self.width,self.height = self.model.binariseImages()
-        except ValueError as e:
-            self.open_error_message_popup_window(str(e))
+        except:
+            messagebox.showinfo('Error', 'Error binarising input image(s).')
             return
 
         self.drawing.clear_canvas_and_display_image(image)
@@ -257,12 +334,27 @@ class View:
         except ValueError as e:
             self.open_error_message_popup_window(str(e))
             return
+        if image_to_display == None or contours == None or spotList == None or region_measurements == None:
+            return
+        image_for_output_file = np.float32(copy.deepcopy(image_to_display))
+
         self.drawing.clear_canvas_and_display_image(image_to_display)
         for contour in contours:
             self.drawing.draw_contour(contour)
+            #for output image file
+            #paired_coords = contour.paired_coordinates()
+            #cv2.polylines(image_for_output_file,paired_coords, True, (0,0,255))
+
         for spot in spotList:
             self.drawing.draw_interactive_spot(spot, 'green2','green')
+            #for output image file
+            #cv2.circle(image_for_output_file,(spot.x0,spot.y0),6,(0,255,0),2)
+            #cv2.putText(image_for_output_file,spot.group_tag.replace('spot_',''),(spot.x0, spot.y0+15), cv2.QT_FONT_BOLD,8,(0,255,0),2, cv2.LINE_AA)
+
         MeasurementDialog(self,region_measurements)
+        mask_without_extension = FileUtils.get_name_without_extension(mask_path)
+        output_image_name = mask_without_extension+'_measured.png'
+        cv2.imwrite(output_image_name,image_for_output_file)
 
     def process_all_masks_in_folder(self, mask_file_folder):
         all_folder_measurements = []
@@ -274,6 +366,8 @@ class View:
                 self.DisplayMask(current_mask_file_path)
                 try:
                     _, _, _, measurements = self.model.measure_shapes(current_mask_file_path,True)
+                    if measurements == None:
+                        return
                     all_folder_measurements = all_folder_measurements+measurements
                 except ValueError as e:
                     self.open_error_message_popup_window(str(e))
@@ -389,6 +483,7 @@ class View:
         self.imagesMenu.entryconfig("Mark Object for Deletion - d", state=NORMAL) #"Mark Object for Deletion [d]"
         self.imagesMenu.entryconfig("Capture Scale - l", state=NORMAL) #"Capture Scale [l]"
         self.imagesMenu.entryconfig("Cancel Current Command - esc", state=NORMAL) #"Capture Scale [l]"
+        self.imagesMenu.entryconfig("Review Analytical Spot", state=NORMAL)
         #self.imagesMenu.entryconfig("Capture Image Region - r", state=NORMAL) #"Capture Scale [l]"
 
     def check_existence_of_images_and_jsons(self, image_folder_path, json_folder_path, data_capture_image_type, create_json_files):
@@ -402,7 +497,7 @@ class View:
         has_images, missing_json_files = self.model.check_for_images_and_jsons(image_folder_path, json_folder_path, data_capture_image_type)
 
         if has_images == False:
-            error_message_text = f"The folder contains no png images of the type selected for data capture: {data_capture_image_type.value}."
+            error_message_text = f"The selected folder does not contain png images of the data capture type selected: {data_capture_image_type.value}."
             self.open_error_message_popup_window(error_message_text)
             return False, None
 
@@ -411,7 +506,7 @@ class View:
 
         if create_json_files == 1:
             for file in missing_json_files:
-                self.model.create_new_json_file(file, data_capture_image_type)
+                self.model.create_new_json_file(file, data_capture_image_type, json_folder_path)
             return True, None
 
         return False, missing_json_files

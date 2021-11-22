@@ -1,6 +1,7 @@
 import json
 import os
 import re
+import uuid
 
 from src.model import FileUtils
 from src.model.drawing_objects.polygon import Polygon
@@ -52,8 +53,9 @@ class JsonData:
         y0 = 0
         x1 = self.image_width
         y1 = self.image_height
+        group_tag = self.data_capture_image_type.value + '_'+str(uuid.uuid4())[:8]
 
-        group_tag = hash(self.data_capture_image_path)
+        #group_tag = hash(self.data_capture_image_path)
         region = ImageRegion(x0, y0, x1, y1, self.data_capture_image_type, group_tag)
         self.image_regions.append(region)
 
@@ -160,7 +162,7 @@ class JsonData:
             json.dump(data, updatedFile, indent=4)
 
     @staticmethod
-    def get_json_file_name_from_path(image_type, image_path):
+    def get_json_file_name_from_collage_path(image_type, image_path):
         image_name = FileUtils.get_name_without_extension(image_path)
 
         if image_type == ImageType.COLLAGE:
@@ -184,6 +186,7 @@ class JsonData:
             return unique_name+ ".json"
 
         raise ValueError(f'Unsupported filename for image type: {image_type.value}.')
+
 
     @staticmethod
     def get_region_id_from_file_path(image_type, image_path):
@@ -213,11 +216,13 @@ class JsonData:
         return sampleid
 
 
-    def save_all(self):
-        json_file_name = JsonData.get_json_file_name_from_path(self.data_capture_image_type, self.data_capture_image_path)
-        folder = FileUtils.get_folder(self.data_capture_image_path)
+    def save_all(self, json_folder_path):
+        if self.data_capture_image_type in [ImageType.RL, ImageType.TL]:
+            json_file_name = FileUtils.get_name_without_extension(self.data_capture_image_path)+'.json'
+        if self.data_capture_image_type == ImageType.COLLAGE:
+            json_file_name = JsonData.get_json_file_name_from_collage_path(self.data_capture_image_type, self.data_capture_image_path)
         data = self.to_json_data()
-        with open(os.path.join(folder, json_file_name), 'w', errors='ignore') as new_json:
+        with open(os.path.join(json_folder_path, json_file_name), 'w', errors='ignore') as new_json:
             json.dump(data, new_json, indent=4)
 
     @staticmethod

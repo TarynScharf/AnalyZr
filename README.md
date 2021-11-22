@@ -1,6 +1,7 @@
 # AnalyZr
 - AnalyZr is designed for the shape analysis of zircon grains in resin mounts, photographed under reflected and transmitted light.
 - Thirteen shape parameters are measured: area, equivalent diameter, perimeter, minor axis, major axis, solidity, convex area, form factor, roundness, compactness, aspect ratio, maximum Feret diameter, minimum Feret diameter.
+- AnalyZr uses .png images.
 
 ## Run the Software
 A stand-alone exe is available for Windows and Ubuntu on this repository. Download the latest release and run.
@@ -9,7 +10,7 @@ A stand-alone exe is available for Windows and Ubuntu on this repository. Downlo
 ### Load Files for Data Capture
 - The image analysis procedure starts with data capture.
 - Open the Data Capture menu and select Load Images. This opens the "Select Images for Spot Capture" dialog.
-- Next to "Data Capture Image Folder", browse to a folder where your images are stored.
+- Next to "Data Capture Image Folder", browse for a folder where your images are stored.
 - Inside your folder, the image files MUST be named according to the following convention:
 sampleID_filename_imagetype.
   - sampleID: usually numeric
@@ -18,13 +19,15 @@ sampleID_filename_imagetype.
   - filetype: transmitted light(TL) e.g. S1_abc_TL 
   - filetype: collage (nothing) e.g. S1_abc 
   - IMPORTANT: sampleID comes fist, image type comes last, everything is separated with underscores
- - Tick "load jsons separately" if you keep the corresponding json files in a different folder.
+ - Tick "load jsons separately" if you keep the corresponding json files in a different folder to your images.
  - If you have no json files, one will be made for every image in the folder. There MUST be a json file for each data capture image.
  - If you have no json files, you can tick "Generate json files if missing". If you don't tick this, and json files are missing, you will be asked if you want to create the missing json files.
+ - You cannot data capture without a json file.
 
 ### Capture Data
-- The images will display and you are able to scroll through them using the left and right arrow key, or the Data Capture/Move to Next Image and Data Capture/Move to Previous Image commands.
-- Capture spot locations and ID's using Data Capture/Capture Analytical Spot, or the "s" key as a short cut.
+- The images will display and you are able to scroll through them using the left and right arrow key on the keyboard, or the Data Capture/Move to Next Image and Data Capture/Move to Previous Image commands.
+- Capture analytical spot locations and ID's using Data Capture/Capture Analytical Spot, or the "s" key as a short cut.
+- Whilst capturing an analytical spot, you can select a CL texture from a drop down both and capture free form text notes related to analytical spot.
 - You MUST capture a scale in order to measure the zircons:
   - If a linear scale is present on the photo, capture it with Data Capture/Capture Scale or the "l" key shortcut. You'll be asked to specify the length of the scale.
   - If no linear scale is present, you can approximate scale from the size of analytical spots that you have placed on your image. Use Data Capture/Capture Analytical Spot Size to draw a bounding box around a spot. The axes of all spot bounding boxes across all images related to the sample will be averaged to arrive at an average spot diameter. This average is done because hand-marked spots are inaccurate. Spot diameters are currently assumed to be 30 micrometers in diameter, which is a  working average for secondary ionization analysis when no more precise scale is available.
@@ -67,13 +70,13 @@ sampleID_filename_imagetype.
 - You might want to change the grain boundaries presented.
   - You can remove any contours by right-clicking on them.
   - You can undo your contour deletion by clicking on the "Undo Delete Contour" button.
-  - You can draw a new boundary by clicking on the "Grain Boundary Capture" button, or using the "p" key shortcut. Proceed to digitise your new boundary. A polygon will be drawn as you digitise. Right-click when you are done drawing your new polygon. Everything inside the polygon will be added to the image as a grain. You can also touch up existing boundaries using this tool e.g. fill a hole inside a grain, extend an existing boundary.
+  - You can draw a new boundary by clicking on the "Grain Boundary Capture" button, or using the "p" key shortcut. Proceed to digitise your new boundary. A polygon will be drawn as you digitise. Middle-click when you are done drawing your new polygon. Everything inside the polygon will be added to the image as a grain. You can also touch up existing boundaries using this tool e.g. fill a hole inside a grain, extend an existing boundary.
 - You can save the binary image as a .png by clicking on Save Mask. When you save the image, the file path is written to the json file, thus a json file is required to save an image. The system will locate the json file in the json folder. If no json folder has been selected, you will be prompted to load the json folder. Load the json folder using Segment Images/Load Json Files.
 
 ## Measure Shapes
 - If you have just binarised and segmented your image, you can move straight to shape measurement by clicking on the "Measure Shapes" button in the Measure Shapes box.
 - If you want to measure a pre-existing image that you have already saved, browse and load the file in the "Browse for Mask Image" window.
-- If you want to measure multiple images in one go, browse and load your folder of mask images in the "Process Mask Folder" window.
+- If you want to measure multiple images in one go, browse and load your folder of mask images in the "Process Mask Folder" window. The masks will display and you are able to scroll through them using the left and right arrows on the key board.
 - Measure shapes by clicking on the "Measure" button.
   - The image will update with the following removed: boundary objects, objects less than 1/6th the size of the largest object in the image, objects you marked for deletion during data capture.
   - The remaining, measured objects have red boundaries and are numbered. 
@@ -86,7 +89,7 @@ sampleID_filename_imagetype.
 
 ## Test Data
 - Test data is provided in the test_data folder. Two cases are provided:
-  - RL_TL: Measuring shapes from a RL and TL image. A RL and TL image are provided by the RL_TL folder.
+  - RL_TL: Measuring shapes from a RL and TL image. A RL and TL images are provided in the RL_TL folder.
   - Collage: Measuring shapes from a collage image. A collage image is a single image comprised of several photos. The user is required to capture the image boundaries. It is assumed that this is done in a software like VOTT. Both the collage image and associated json file with image boundaries is provided in the folder.
     - Often hand-written notes may be written anywhere on the original collage image, thus data capture is performed on the original collage image. The "source file" subfolder contains the original collage image and json file, for data capture.
     - Individual RL and TL images are required for binarisation. The RL and TL images have been extracted from the collage image, and have the same extents in pixels. RL and TL images are provided in the RL_TL_extracts folder.

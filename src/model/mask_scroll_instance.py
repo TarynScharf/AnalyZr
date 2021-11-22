@@ -27,7 +27,7 @@ class MaskScrollInstance:
     def create_source_file_dictionary(self,json_folder):
         source_images = {}
         for mask_path in self.mask_list:
-            json_name = JsonData.get_json_file_name_from_path(ImageType.MASK, mask_path)
+            json_name = JsonData.get_json_file_name_from_collage_path(ImageType.MASK, mask_path)
             region_id = JsonData.get_region_id_from_file_path(ImageType.MASK, mask_path)
             json_file_path = os.path.join(json_folder, json_name)
             try:

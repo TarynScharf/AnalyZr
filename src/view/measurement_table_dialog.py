@@ -17,6 +17,7 @@ class MeasurementDialog():
         self.measurement_window.title("Image Segmentation Toolbox")
         self.measurement_window.minsize(400, 110)
         self.measurement_window.lift()
+        self.measurement_window.grab_set()
 
         self.buttons_frame = tk.Frame(self.measurement_window, width=400, height=150)
         self.buttons_frame.grid(row=0, column=0,sticky='w')

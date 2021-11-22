@@ -1,6 +1,6 @@
 import tkinter as tk
 from tkinter import *
-from tkinter import filedialog
+from tkinter import filedialog, messagebox
 from tkinter.ttk import *
 
 class MeasureScaleDialog():
@@ -12,6 +12,8 @@ class MeasureScaleDialog():
         self.capture_scale_window.title("Real World Distance")
         self.capture_scale_window.minsize(200, 70)
         self.capture_scale_window.lift()
+        self.capture_scale_window.grab_set()
+        self.capture_scale_window.focus_set()
 
         #VARIABLES
         self.real_world_distance = tk.StringVar()
@@ -25,11 +27,15 @@ class MeasureScaleDialog():
         self.ok_button.grid(column = 0, row = 1, sticky = 'w',padx=2, pady=5)
 
         self.capture_scale_window.protocol("WM_DELETE_WINDOW", self.on_closing)
+        self.capture_scale_window.bind('<Return>', lambda e: self.save_drawing_object_to_json())
+
+        self.capture_scale_window.bind('<Return>', lambda e: self.save_drawing_object_to_json())
 
     def save_drawing_object_to_json(self):
         try:
             if not self.real_world_distance.get().isdigit():
-                raise ValueError(f'No real world distance provided')
+                messagebox.showinfo('Error', 'No real world distance provided')
+                return
             self.capture_scale_window.destroy()
             self.scale_line.real_world_distance = self.real_world_distance.get()
             saved = self.model.save_drawing_object_to_json(self.scale_line)

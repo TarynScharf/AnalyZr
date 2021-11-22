@@ -40,7 +40,8 @@ class Model():
     def __init__(self):
 
         self.image_folder_path = None
-        self.json_folder_path = None  # where json files are stored.
+        self.json_folder_path = None
+        self.json_file = None #current file when scrolling through masks
 
         self.rl_path = None
         self.tl_path = None
@@ -108,25 +109,42 @@ class Model():
             contour_coords = self.contours_by_group_tag[group_tag].paired_coordinates()
             polygon = shapely.geometry.Polygon(contour_coords)  # create a shapely polygon
             representative_point = polygon.representative_point()  # using the shapely polygon, get a point inside the polygon
-            self.threshold = skimage.measure.label(self.threshold, background=0, connectivity=None).astype('uint8')
+            self.thresholsd = skimage.measure.label(self.threshold, background=0, connectivity=None).astype('uint8')
             blob_label = self.threshold[int(representative_point.y),int(representative_point.x)]
             if int(blob_label)!=0:
                 self.threshold[self.threshold==blob_label]=0
             self.delete_contour(group_tag)
 
         else:
-            with open(os.path.join(self.json_folder_path, self.image_iterator_current[0]), errors='ignore') as jsonFile:  # open the json file for the image
-                data = json.load(jsonFile)
-            for i in range(0, len(data['regions'])):  # If the object already exists in the json
-                if data['regions'][i]['id'] == group_tag:
-                    data['regions'].pop(i)  # get rid of it. Don't read further (affects incrementor?)
-                    break
-            with open(os.path.join(self.json_folder_path, self.image_iterator_current[0]), 'w', errors='ignore') as updatedFile:
-                json.dump(data, updatedFile, indent=4)  # rewrite the json without the object
-            try:
-                self.unique_sample_numbers[self.currentSample].discard(group_tag)
-            except:
-                pass
+            if self.image_iterator_current != None:#When conducting data capture
+                with open(os.path.join(self.json_folder_path, self.image_iterator_current[0]), errors='ignore') as jsonFile:  # open the json file for the image
+                    data = json.load(jsonFile)
+
+                for i in range(0, len(data['regions'])):  # If the object already exists in the json
+                    if data['regions'][i]['id'] == group_tag:
+                        data['regions'].pop(i)  # get rid of it. Don't read further (affects incrementor?)
+                        break
+                with open(os.path.join(self.json_folder_path, self.image_iterator_current[0]), 'w', errors='ignore') as updatedFile:
+                    json.dump(data, updatedFile, indent=4)  # rewrite the json without the object
+                try:
+                    self.unique_sample_numbers[self.currentSample].discard(group_tag)
+                except:
+                    pass
+
+            else: #when  scrolling through a mask folder:
+                with open(self.json_file, errors='ignore') as jsonFile:  # open the json file for the image
+                    data = json.load(jsonFile)
+
+                for i in range(0, len(data['regions'])):  # If the object already exists in the json
+                    if data['regions'][i]['id'] == group_tag:
+                        data['regions'].pop(i)  # get rid of it. Don't read further (affects incrementor?)
+                        break
+                with open(self.json_file, 'w', errors='ignore') as updatedFile:
+                    json.dump(data, updatedFile, indent=4)  # rewrite the json without the object
+                try:
+                    self.unique_sample_numbers[self.currentSample].discard(group_tag)
+                except:
+                    pass
 
     def delete_contour(self, group_tag):
         self.deleted_contours.append(self.contours_by_group_tag[group_tag])  # store the last contour to be deleted
@@ -206,7 +224,8 @@ class Model():
 
             if filter_fn is not None and not filter_fn(contoursFinal[i]):
                 continue
-
+            if hierarchyFinal[0][i][3] == -1:
+                prefix='extcont'
             coordinate_pairs = np.squeeze(contoursFinal[i])
             groupID = prefix+"_" + str(count_contour)
             polygon = Contour(groupID, coordinate_pairs)
@@ -218,36 +237,41 @@ class Model():
     def update_spot_location_in_json_file(self, spot):
         if self.mask_path:
             file_path = self.mask_path
+            image_type = ImageType.MASK
         elif self.rl_path:
             file_path = self.rl_path
+            image_type = ImageType.RL
         elif self.tl_path:
             file_path = self.tl_path
+            image_type = ImageType.TL
 
         #get the json file name
-        image_name = FileUtils.get_name_without_extension(file_path)
-        image_types = [ImageType.RL, ImageType.TL, ImageType.MASK,ImageType.COLLAGE]
-        for type in image_types:
-            pattern = "_" + type.file_pattern()
-            result = re.search(pattern, image_name, re.IGNORECASE)
-            if result is not None:
-                index = result.start()
-                json_file_name = image_name[:index]+".json"
-                region_id = JsonData.get_region_id_from_file_path(type,file_path)
-                break
+        json_file_path, region_id,sample_id = self.get_json_path_and_region_id_and_sample_id_for_measurement(file_path, image_type)
+        if json_file_path == None or region_id == None or sample_id == None:
+            return
 
-        with open(os.path.join(self.json_folder_path, json_file_name), errors='ignore') as jsonFile:
+        with open(json_file_path, errors='ignore') as jsonFile:
             data = json.load(jsonFile)
-        if region_id == None:
-            region_id = data["regions"][0]["id"]
         region_top, region_left, _, _ = self.get_region_dimensions_from_json(data, region_id)
         for region in data['regions']:
-            if region['id'] == spot.group_tag and region['type'] == 'POINT':
-                x = spot.x0 + region_left
-                y = spot.y0 + region_top
-                newPoints = [{"x": x, "y": y}]
+            if region['id'] == spot.group_tag.replace('spot_',''):
+                if region['type'] == 'POINT':
+                    x = spot.x0 + region_left
+                    y = spot.y0 + region_top
+                    newPoints = [{"x": x, "y": y}]
+                #This handles historical data types when  spots and spot areas could be captured in one
+                if region['type'] == 'RECTANGLE' and region['tags'][0]=='SPOT':
+                    region['boundingBox']['left']= (spot.x0 + region_left) - (region['boundingBox']['width']/2)
+                    region['boundingBox']['top']= (spot.y0 + region_top) - (region['boundingBox']['height']/2)
+                    newPoints = [{'x':region['boundingBox']['left'], 'y':region['boundingBox']['top']},
+                                 {'x':region['boundingBox']['left']+region['boundingBox']['width'],'y':region['boundingBox']['top']},
+                                 {'x':region['boundingBox']['left']+region['boundingBox']['width'], 'y':region['boundingBox']['top']+region['boundingBox']['height']},
+                                 {'x':region['boundingBox']['left'],'y':region['boundingBox']['top']+region['boundingBox']['height']}]
+
                 region["points"] = newPoints
                 break
-        with open(os.path.join(self.json_folder_path, json_file_name), 'w', errors='ignore') as updatedFile:
+
+        with open(json_file_path, 'w', errors='ignore') as updatedFile:
             json.dump(data, updatedFile, indent=4)
 
     def save_drawing_object_to_json(self, object):
@@ -270,9 +294,12 @@ class Model():
             data = json.load(jsonFile)
             anyMatch = False
             for region in data['regions']:  # If the spot already exists in the jSON
-                if region['id'] == previous_group_tag:
-                    region['id'] = spot.group_tag
+                if region['id'] == previous_group_tag.replace('spot_',''):
+                    region['id'] = spot.group_tag.replace('spot_','')
+                    region['cl_texture'] = spot.cl_texture
+                    region['notes'] = spot.notes
                     anyMatch = True
+                    break
 
             #if anyMatch == False and Type == "POINT":  # if it's newly digitised and does not yet exist in the json file, and it's a point
             if anyMatch == False:
@@ -327,7 +354,7 @@ class Model():
         self.threshold[self.threshold > 0] = 255
         self.height =self.threshold.shape[0]
         self.width = self.threshold.shape[1]
-        jsonName = JsonData.get_json_file_name_from_path(image_type,mask_path)
+        jsonName = JsonData.get_json_file_name_from_collage_path(image_type, mask_path)
         sampleid = JsonData.get_sample_id_from_file_path(mask_path)
         regionID = JsonData.get_region_id_from_file_path(image_type, mask_path)
 
@@ -365,21 +392,21 @@ class Model():
     def check_for_images_and_jsons(self, image_folder_path, json_folder_path, data_capture_image_type):
         has_images = False
         missing_json_files = []
-        for path, folders, files in os.walk(image_folder_path):
-            for name in files:
-                extension = os.path.splitext(name)[1]
-                # check for images
-                if extension.lower() == '.png' and self.is_file_name_of_image_type(name,data_capture_image_type):
-                    has_images = True
-                    if data_capture_image_type == ImageType.COLLAGE:
-                        file_name_without_imagetype = name.replace('_'+data_capture_image_type.name,'')
-                        json_file = os.path.splitext(file_name_without_imagetype)[0] + '.json'
-                    else:
-                        json_file = os.path.splitext(name)[0] + '.json'
-                    has_json = self.does_json_exist(os.path.join(json_folder_path, json_file))
-                    if not has_json:
-                        json_path = os.path.join(path,name)
-                        missing_json_files.append(json_path)
+        files = next(os.walk(image_folder_path), (None, None, []))[2]
+        for name in files:
+            extension = os.path.splitext(name)[1]
+            # check for images
+            if extension.lower() == '.png' and self.is_file_name_of_image_type(name,data_capture_image_type):
+                has_images = True
+                if data_capture_image_type == ImageType.COLLAGE:
+                    file_name_without_imagetype = name.replace('_'+data_capture_image_type.name,'')
+                    json_file = os.path.splitext(file_name_without_imagetype)[0] + '.json'
+                else:
+                    json_file = os.path.splitext(name)[0] + '.json'
+                has_json = self.does_json_exist(os.path.join(json_folder_path, json_file))
+                if not has_json:
+                    json_path = os.path.join(image_folder_path,name)
+                    missing_json_files.append(json_path)
 
         return has_images, missing_json_files
 
@@ -389,11 +416,11 @@ class Model():
     def is_file_name_of_image_type(self, file_name:str, image_type):
         name = os.path.splitext(file_name)[0]
         pattern = image_type.file_pattern()
-        if image_type == ImageType.COLLAGE:
+        if image_type == ImageType.COLLAGE or image_type == ImageType.MASK:
             return True
         return name.endswith("_" + pattern) or ("_" + pattern + "_") in file_name
 
-    def create_new_json_file(self, data_capture_image_path, image_type):
+    def create_new_json_file(self, data_capture_image_path, image_type, json_folder_path):
         image = cv2.imread(data_capture_image_path)[:,:,0]
         image_width = image.shape[1]
         image_height = image.shape[0]
@@ -401,31 +428,36 @@ class Model():
         data = JsonData(data_capture_image_path,image_type,image_width, image_height)
         # If we're creating a new json path then the data-capture image is not a collage
         # and therefore we add a single region to the json file that encompasses the whole image.
-        data.add_first_image_region()
-        data.save_all()
+        if image_type is not ImageType.COLLAGE:
+            data.add_first_image_region()
+        data.save_all(json_folder_path)
 
-    def read_sampleID_and_spots_from_json(self):
+    def read_sampleID_and_spots_from_json(self,data_capture_image_type,image_folder_path):
         # Get a list of unique sample ID's and the spots associated with them.
         for path, folders, files in os.walk(self.json_folder_path):
             for json_file_name in files:
-                if os.path.splitext(json_file_name)[1] == '.json':
+                if os.path.splitext(json_file_name)[1] == '.json' and self.is_file_name_of_image_type(json_file_name,data_capture_image_type):
                     with open(os.path.join(self.json_folder_path, json_file_name), errors='ignore') as jsonFile:
                         data = json.load(jsonFile)
                     if not json_file_name in self.jsonList:
                         # add the image name to the list of json files, as jsons and images have same name
                         image_name = data['asset']['name']
-                        self.jsonList.append([json_file_name, image_name])
-                        sampleID = image_name.split("_")[0]
-                        # create a dictionary with unique sample numbers only
-                        if sampleID not in self.unique_sample_numbers:
-                            self.unique_sample_numbers[sampleID] = set()
-                            self.sampleList.append(sampleID)
-                            # everytime we find a json with a unique sample number, don't forget to get the spots listed in that json
-                            for region in data['regions']:
-                                self.unique_sample_numbers[sampleID].add(region['id'])
-                        else:  # you might find jsons with existing sample numbers. They may also contains spots, record those spots.
-                            for region in data['regions']:
-                                self.unique_sample_numbers[sampleID].add(region['id'])
+                        if os.path.isfile(os.path.join(image_folder_path,image_name)):
+                            self.jsonList.append([json_file_name, image_name])
+                            sampleID = image_name.split("_")[0]
+                            # create a dictionary with unique sample numbers only
+                            if sampleID not in self.unique_sample_numbers:
+                                self.unique_sample_numbers[sampleID] = set()
+                                self.sampleList.append(sampleID)
+                                # everytime we find a json with a unique sample number, don't forget to get the spots listed in that json
+                                for region in data['regions']:
+                                    self.unique_sample_numbers[sampleID].add(region['id'])
+                            else:  # you might find jsons with existing sample numbers. They may also contains spots, record those spots.
+                                for region in data['regions']:
+                                    self.unique_sample_numbers[sampleID].add(region['id'])
+                        else:
+                            messagebox.showinfo('Error', f'File does not exist:{os.path.join(image_folder_path,image_name)}')
+
 
         self.sampleList.sort()
 
@@ -498,12 +530,14 @@ class Model():
         if self.current_image_index > 0:
             self.current_image_index -= 1
 
-    def get_current_image_for_data_capture (self):
-        #This is for cycling through images associated with json files when capturing spots
+    def get_json_file_and_image(self):
         self.image_iterator_current = self.jsonList[self.current_image_index]
         im = self.image_iterator_current[1]
         jf = self.image_iterator_current[0]
+        return im, jf
 
+    def get_current_image_for_data_capture (self):
+        im, jf = self.get_json_file_and_image()
         self.currentSample = im.split("_")[0]
         fileName = os.path.join(self.image_folder_path, im)
         image = Image.open(fileName)
@@ -513,7 +547,7 @@ class Model():
         return image, image_data
 
     def preprocess_image_for_measurement(self, mask_file_path):
-        if mask_file_path != '':
+        if mask_file_path is not None and mask_file_path.strip() != '':
             self.threshold = cv2.imread(mask_file_path)[:, :, 0]
             self.width = self.threshold.shape[1]
             self.height = self.threshold.shape[0]
@@ -523,7 +557,7 @@ class Model():
 
         return image_clear_uint8
 
-    def read_spots_unwanted_scale_from_json(self,json_data, json_file_path,regionID):
+    def read_spots_unwanted_scale_from_json(self,json_data, json_file_path,regionID, mask_scrolling = None):
         spotList = []
         regions_to_remove_from_mask_image = []
         region_object = json_data.get_image_region(regionID)
@@ -560,6 +594,7 @@ class Model():
                 scale_in_real_world_distance = 30 / average_scale
             else:
                 raise ValueError('No scale available in sample')
+
 
         return spotList,regions_to_remove_from_mask_image,scale_in_real_world_distance,region_object
 
@@ -652,7 +687,9 @@ class Model():
             else:
                 for spot in spots_in_region:
                     spot_measurement = copy.deepcopy(measurement)
-                    spot_measurement.grain_spots = spot.group_tag
+                    spot_measurement.grain_spots = spot.group_tag.replace('spot_','')
+                    spot_measurement.cl_texture = spot.cl_texture
+                    spot_measurement.notes = spot.notes
                     measurements.append(spot_measurement)
 
         return measurements
@@ -669,6 +706,44 @@ class Model():
 
         return image_to_display
 
+    def get_region_id_and_json_unique_name_for_rl_and_tl_images(self, image_type, image_folder):
+
+        json_unique_name = JsonData.get_json_file_name_from_collage_path(image_type, image_folder)
+        json_for_tl_image = FileUtils.get_name_without_extension(self.json_folder_path) + '_TL.json'
+        json_for_tl_image_exists = os.path.isfile(os.path.join(self.json_folder_path, json_for_tl_image))
+        json_for_rl_image = FileUtils.get_name_without_extension(json_unique_name) + '_RL.json'
+        json_for_rl_image_exists = os.path.isfile(os.path.join(self.json_folder_path, json_for_rl_image))
+
+        # If the user has  binarised both a TL and RL image, and also created jsons for both these files
+        if json_for_tl_image_exists and json_for_rl_image_exists:
+            messagebox.showinfo('Cannot Save Mask', 'Two potential json files exist for this mask:\n'
+
+                                                    f'TL: {json_for_tl_image}\n'
+                                                    f'RL: {json_for_rl_image}\n'
+                                                    '\n'
+                                                    f'Both files exist in the json folder:\n'
+                                                    f'{self.json_folder_path}\n'
+                                                    '\n'
+                                                    'Please delete/remove the unwanted json file.')
+            return
+
+        # if the user has binarised both a TL and RL image, but jsons are available for neither
+        if not json_for_tl_image_exists and not json_for_rl_image_exists:
+            messagebox.showinfo('Operation Cancelled', 'No json file exists for this mask.\n'
+                                                       'Please ensure a single json file exists,\n'
+                                                       'as created through the data capture process.')
+            return
+
+        if json_for_tl_image_exists:
+            json_unique_name = json_for_tl_image
+        if json_for_rl_image_exists:
+            json_unique_name = json_for_rl_image
+
+        with open(os.path.join(self.json_folder_path, json_unique_name), errors='ignore') as jsonFile:
+            data = json.load(jsonFile)
+        region_id = data["regions"][0]["id"]
+
+        return region_id, json_unique_name
 
     def iterate_though_mask_images(self,mask_folder_path):
         if self.json_folder_path is None:
@@ -685,23 +760,86 @@ class Model():
                     continue
                 current_mask_file_path = os.path.join(mask_folder_path,name) #the file path of the current mask we're processing
                 self.view.DisplayMask(current_mask_file_path)
-                self.read_sampleID_and_spots_from_json()
+                self.read_sampleID_and_spots_from_json(ImageType.MASK,mask_folder_path)
                 self.view.update_data_capture_display()
+
+    def identify_json_file(self, image_type, path):
+        json_unique_name = JsonData.get_json_file_name_from_collage_path(image_type, path)
+        region_id = JsonData.get_region_id_from_file_path(image_type, path)
+        json_folder_path = self.json_folder_path
+
+        if region_id is None:
+
+            # if no region id is detected in the file path,
+            # the user is dealing with a TL or RL image, one image on the page
+            # and the first region describes the image region
+            # and the json file has the same name as the image
+
+            json_for_tl_image = FileUtils.get_name_without_extension(json_unique_name) + '_TL.json'
+            json_for_tl_image_exists = os.path.isfile(os.path.join(json_folder_path, json_for_tl_image))
+            json_for_rl_image = FileUtils.get_name_without_extension(json_unique_name) + '_RL.json'
+            json_for_rl_image_exists = os.path.isfile(os.path.join(json_folder_path, json_for_rl_image))
+
+            # If the user has  binarised both a TL and RL image, and also created jsons for both these files
+            if json_for_tl_image_exists and json_for_rl_image_exists:
+                messagebox.showinfo('Error', 'Two potential json files exist for this mask:\n'
+
+                                             f'TL: {json_for_tl_image}\n'
+                                             f'RL: {json_for_rl_image}\n'
+                                             '\n'
+                                             f'Both files exist in the json folder:\n'
+                                             f'{json_folder_path}\n'
+                                             '\n'
+                                             'Please delete/remove the unwanted json file.')
+                return None, None
+
+            # if the user has binarised both a TL and RL image, but jsons are available for neither
+            if not json_for_tl_image_exists and not json_for_rl_image_exists:
+                messagebox.showinfo('Error', 'No json file exists for this mask.\n'
+                                             'Please ensure a single json file exists,\n'
+                                             'as created through the data capture process.')
+                return None, None
+
+            if json_for_tl_image_exists:
+                json_unique_name = json_for_tl_image
+            if json_for_rl_image_exists:
+                json_unique_name = json_for_rl_image
+
+            with open(os.path.join(json_folder_path, json_unique_name), errors='ignore') as jsonFile:
+                data = json.load(jsonFile)
+
+            for region in data['regions']:
+                if region['tags'][0] == image_type.value:
+                    region_id = region["id"]
+                if region_id == None or region_id == '':
+                    messagebox.showinfo('Error', 'Region cannot be identified in json file')
+                    return None, None
+
+        return json_unique_name, region_id
 
     def measure_shapes(self, mask_path, process_folder):
         if self.json_folder_path is None:
             raise ValueError('No json folder path selected')
-        json_file_path,region_id,sample_id = self.get_json_path_and_region_id_and_sample_id_for_measurement(mask_path)
+        self.SaveBreakChanges()
+        if mask_path == None or mask_path.strip() == '':
+            mask_path, image_type =  self.get_image_path_and_type(mask_path)
+        else:
+            image_type = ImageType.MASK
+
+        json_file_path,region_id,sample_id = self.get_json_path_and_region_id_and_sample_id_for_measurement(mask_path, image_type)
+        if json_file_path == None or region_id == None or sample_id == None:
+            return None, None, None, None
+
         data = JsonData.load_all(json_file_path)
-        if region_id == None or region_id == '':
-            region_id = data.image_regions[0].group_tag
         self.spots_in_measured_image = None
         self.contours_by_group_tag={}
         spotList, regions_to_remove_from_mask_image, scale_in_real_world_units, image_region = self.read_spots_unwanted_scale_from_json(data,json_file_path,region_id)
         self.spots_in_measured_image = spotList
 
-        self.threshold = self.preprocess_image_for_measurement(mask_path)
+        self.threshold = self.preprocess_image_for_measurement(self.mask_path)
         self.remove_unwanted_objects_from_binary_image(regions_to_remove_from_mask_image)
+        if self.threshold.min() == 0 and self.threshold.max() == 0:
+            raise ValueError('No objects to measure in image.')
 
         region_measurements = self.create_measurement_table(sample_id,region_id,image_region,scale_in_real_world_units,mask_path,spotList)
 
@@ -822,9 +960,10 @@ class Model():
         self.save_drawing_object_to_json(spot)
 
     def update_spot_id(self, spot, new_ID):
-        self.check_spot_id_is_unique(new_ID)
+        if new_ID != spot.group_tag.replace('spot_', ''):
+            self.check_spot_id_is_unique(new_ID)
         previous_group_tag = spot.group_tag
-        spot.group_tag = new_ID
+        spot.group_tag = 'spot_'+new_ID
         self.update_spot_group_tag_in_json(spot, previous_group_tag)
 
     def check_spot_id_is_unique(self,ID):
@@ -919,7 +1058,7 @@ class Model():
                 return spot
         return None
 
-    def get_json_path_and_region_id_and_sample_id_for_measurement(self, mask_path):
+    def get_image_path_and_type(self,mask_path):
         if mask_path != '':
             image_type = ImageType.MASK
             path = mask_path
@@ -930,14 +1069,31 @@ class Model():
             image_type = ImageType.TL
             path= self.tl_path
         else:
-            raise ValueError('No binarisation images found')
+            raise ValueError('No images found')
 
-        json_file_name = JsonData.get_json_file_name_from_path(image_type, path)
-        region_id = JsonData.get_region_id_from_file_path(image_type,path)
-        json_file_path = os.path.join(self.json_folder_path,json_file_name)
+        return path, image_type
 
+    def get_json_path_and_region_id_and_sample_id_for_measurement(self, path, image_type):
+        json_file_name, region_id = self.identify_json_file(image_type, path)
+        if json_file_name == None or region_id == None:
+            return None, None, None
+        json_file_path = os.path.join(self.json_folder_path, json_file_name)
         sample_id = JsonData.get_sample_id_from_file_path(path)
 
         return json_file_path, region_id,sample_id
+
+    def get_spot_data(self, group_tag, unique_tag):
+        im,jf = self.get_json_file_and_image()
+        json_file_path = os.path.join(self.json_folder_path, jf)
+        with open(json_file_path, errors='ignore') as jsonFile:
+            data = json.load(jsonFile)
+        for region in data['regions']:
+            if region['id'] == group_tag.replace('spot_', ''):
+                spot = Spot.fromJSONData(region)
+                spot.unique_tag = unique_tag
+                spot.unique_text_tag = unique_tag+'_text'
+        return spot
+
+
 
 
