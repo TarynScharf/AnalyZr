@@ -811,9 +811,9 @@ class Model():
             for region in data['regions']:
                 if region['tags'][0] == image_type.value:
                     region_id = region["id"]
-                if region_id == None or region_id == '':
-                    messagebox.showinfo('Error', 'Region cannot be identified in json file')
-                    return None, None
+            if region_id == None or region_id == '':
+                messagebox.showinfo('Error', 'Region cannot be identified in json file')
+                return None, None
 
         return json_unique_name, region_id
 
