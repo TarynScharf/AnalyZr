@@ -18,7 +18,7 @@ class SegmentationDialog():
         self.Segmentation_Window.protocol("WM_DELETE_WINDOW", self.on_closing)
         self.Segmentation_Window.title("Image Segmentation Toolbox")
         self.Segmentation_Window.minsize(400, 110)
-        self.Segmentation_Window.lift(aboveThis=self.view.master)
+        self.Segmentation_Window.attributes("-topmost", 1)
         self.Segmentation_Window.grab_set()
 
         #VARIABLES
