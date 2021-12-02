@@ -188,7 +188,6 @@ class Drawing():
         self.myCanvas.unbind("<Button-1>")  # unbind the spot digitisation
         self.myCanvas.unbind("<ButtonPress-1>")  # unbind rectangle digitisation
         self.myCanvas.unbind("<ButtonPress-2>")
-        self.myCanvas.unbind("<ButtonPress-3>")
         self.myCanvas.unbind("<B1-Motion>")  # unbind rectangle digitisation
         self.myCanvas.unbind("<ButtonRelease-1>")  # unbind rectangle digitisation
         self.myCanvas.bind("<ButtonPress-1>", self.add_polygon_vertex)

@@ -153,6 +153,7 @@ class SegmentationDialog():
         self.view.master.bind("p", lambda e: self.view.drawing.BoundaryDraw())
         self.view.master.unbind("q")
 
+
     def browse_for_mask_folder(self):
         json_folder_path = self.view.get_json_path()
         if json_folder_path == None:
@@ -277,6 +278,7 @@ class SegmentationDialog():
         return path
 
     def display_mask(self):
+        self.Segmentation_Window.grab_release()
         if self.view.model.json_folder_path == None or self.view.model.json_folder_path == '':
             messagebox.showinfo('Error', 'No json folder has been selected.')
             return
