@@ -1,0 +1,46 @@
+{
+    "asset": {
+        "format": ".png",
+        "id": 1939120356,
+        "name": "123456_spots_p2_RL.png",
+        "path": "C:/Users/20023951/PycharmProjects/ZirconSeparation/test_data/RL_TL\\123456_spots_p2_RL.png",
+        "data capture image type": "RL",
+        "size": {
+            "width": 660,
+            "height": 1017
+        }
+    },
+    "regions": [
+        {
+            "id": "RL_2512fd06",
+            "type": "RECTANGLE",
+            "tags": [
+                "RL"
+            ],
+            "boundingBox": {
+                "height": 1017,
+                "width": 660,
+                "left": 0,
+                "top": 0
+            },
+            "points": [
+                {
+                    "x": 0,
+                    "y": 0
+                },
+                {
+                    "x": 660,
+                    "y": 0
+                },
+                {
+                    "x": 660,
+                    "y": 1017
+                },
+                {
+                    "x": 0,
+                    "y": 1017
+                }
+            ]
+        }
+    ]
+}

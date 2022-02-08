@@ -133,6 +133,7 @@ class View:
             region_id = data.image_regions[0].group_tag
         spotList, regions_to_remove_from_mask_image, scale_in_real_world_units, image_region = self.model.read_spots_unwanted_scale_from_json(data, self.model.json_file, region_id, mask_scrolling = True)
         self.model.spots_in_measured_image = spotList
+        self.model.unwanted_objects_in_image = regions_to_remove_from_mask_image
 
         source_RL_path = scroll_instance.source_files[mask_file_path][0]
         source_TL_path = scroll_instance.source_files[mask_file_path][1]
@@ -173,8 +174,13 @@ class View:
         for spot in spotList:
             self.drawing.draw_interactive_spot(spot, 'green2', 'green')
 
+        for region_to_remove in regions_to_remove_from_mask_image:
+            self.drawing.draw_interactive_rectange(region_to_remove)
+
+
         segmentation_display.update_textbox(segmentation_display.RLTextBox,source_RL_path)
         segmentation_display.update_textbox(segmentation_display.TLTextBox,source_TL_path)
+        self.model.mask_path = mask_file_path
 
         self.label['text'] = FileUtils.get_name(mask_file_path) + f" | {scroll_instance.pointer +1} of {len(scroll_instance.mask_list)}"
 
@@ -192,6 +198,7 @@ class View:
             region_id = data.image_regions[0].group_tag
         spotList, regions_to_remove_from_mask_image, scale_in_real_world_units, image_region = self.model.read_spots_unwanted_scale_from_json(data, self.model.json_file, region_id)
         self.model.spots_in_measured_image = spotList
+        self.model.unwanted_objects_in_image = regions_to_remove_from_mask_image
         self.DisplayMask(mask_file_path)
         for spot in spotList:
             self.drawing.draw_interactive_spot(spot, 'green2', 'green')
@@ -235,8 +242,12 @@ class View:
         for spot in spotList:
             self.drawing.draw_interactive_spot(spot, 'green2', 'green')
 
+        for region_to_remove in regions_to_remove_from_mask_image:
+            self.drawing.draw_interactive_rectange(region_to_remove)
+
         segmentation_display.update_textbox(segmentation_display.RLTextBox, source_RL_path)
         segmentation_display.update_textbox(segmentation_display.TLTextBox, source_TL_path)
+        self.model.mask_path = mask_file_path
         self.label['text'] = FileUtils.get_name(mask_file_path) + f" | {scroll_instance.pointer+1} of {len(scroll_instance.mask_list)}"
 
     def NextImage(self):
@@ -320,6 +331,9 @@ class View:
         self.model.set_rl_tl_paths_and_usage(RLPath, TLPath,rlVar, tlVar)
         try:
             image,contours,self.width,self.height = self.model.binariseImages()
+        except ValueError as e:
+            messagebox.showinfo('Error', str(e))
+            return
         except:
             messagebox.showinfo('Error', 'Error binarising input image(s).')
             return

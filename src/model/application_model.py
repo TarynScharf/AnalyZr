@@ -68,6 +68,7 @@ class Model():
         self.text_label = ''  # label for duplicate grains and spot scales
         self.count = 0  # Used to put id's onto break  lines
         self.database_file_path = None
+        self.unwanted_objects_in_image = None #tracks objects for deletion when loading a mask folder.
 
         self.x0 = None
         self.y0 = None
@@ -234,7 +235,7 @@ class Model():
 
         return list(self.contours_by_group_tag.values())
 
-    def update_spot_location_in_json_file(self, spot):
+    def update_object_location_in_json_file(self, object):
         if self.mask_path:
             file_path = self.mask_path
             image_type = ImageType.MASK
@@ -254,19 +255,20 @@ class Model():
             data = json.load(jsonFile)
         region_top, region_left, _, _ = self.get_region_dimensions_from_json(data, region_id)
         for region in data['regions']:
-            if region['id'] == spot.group_tag.replace('spot_',''):
+            if region['id'] == object.group_tag.replace('spot_', '') or region['id'] == object.group_tag.replace('duplicate_',''):
                 if region['type'] == 'POINT':
-                    x = spot.x0 + region_left
-                    y = spot.y0 + region_top
+                    x = object.x0 + region_left
+                    y = object.y0 + region_top
                     newPoints = [{"x": x, "y": y}]
                 #This handles historical data types when  spots and spot areas could be captured in one
-                if region['type'] == 'RECTANGLE' and region['tags'][0]=='SPOT':
-                    region['boundingBox']['left']= (spot.x0 + region_left) - (region['boundingBox']['width']/2)
-                    region['boundingBox']['top']= (spot.y0 + region_top) - (region['boundingBox']['height']/2)
-                    newPoints = [{'x':region['boundingBox']['left'], 'y':region['boundingBox']['top']},
-                                 {'x':region['boundingBox']['left']+region['boundingBox']['width'],'y':region['boundingBox']['top']},
-                                 {'x':region['boundingBox']['left']+region['boundingBox']['width'], 'y':region['boundingBox']['top']+region['boundingBox']['height']},
-                                 {'x':region['boundingBox']['left'],'y':region['boundingBox']['top']+region['boundingBox']['height']}]
+                if region['type'] == 'RECTANGLE':
+                    if region['tags'][0]=='SPOT' or region['tags'][0]=='DUPLICATE':
+                        region['boundingBox']['left']= (object.x0 + region_left) - (region['boundingBox']['width'] / 2)
+                        region['boundingBox']['top']= (object.y0 + region_top) - (region['boundingBox']['height'] / 2)
+                        newPoints = [{'x':region['boundingBox']['left'], 'y':region['boundingBox']['top']},
+                                     {'x':region['boundingBox']['left']+region['boundingBox']['width'],'y':region['boundingBox']['top']},
+                                     {'x':region['boundingBox']['left']+region['boundingBox']['width'], 'y':region['boundingBox']['top']+region['boundingBox']['height']},
+                                     {'x':region['boundingBox']['left'],'y':region['boundingBox']['top']+region['boundingBox']['height']}]
 
                 region["points"] = newPoints
                 break
@@ -836,7 +838,7 @@ class Model():
         spotList, regions_to_remove_from_mask_image, scale_in_real_world_units, image_region = self.read_spots_unwanted_scale_from_json(data,json_file_path,region_id)
         self.spots_in_measured_image = spotList
 
-        self.threshold = self.preprocess_image_for_measurement(self.mask_path)
+        self.threshold = self.preprocess_image_for_measurement(mask_path)
         self.remove_unwanted_objects_from_binary_image(regions_to_remove_from_mask_image)
         if self.threshold.min() == 0 and self.threshold.max() == 0:
             raise ValueError('No objects to measure in image.')
@@ -890,6 +892,8 @@ class Model():
             raise ValueError('Select image to binarise')
 
         elif self.binarise_rl_image == 1 and self.binarise_tl_image == 1:
+            if otsuInvTL_uint8.shape != fillRL_uint8.shape:
+                raise ValueError('Input images are not of the same pixel size.')
             self.threshold = cv2.add(otsuInvTL_uint8, fillRL_uint8)
 
         elif self.binarise_rl_image ==1 and self.binarise_tl_image ==0:
@@ -1056,6 +1060,12 @@ class Model():
         for spot in self.spots_in_measured_image:
             if spot.unique_tag == unique_tag:
                 return spot
+        return None
+
+    def find_unwanted_object_in_measured_image_by_unique_tag(self,unique_tag):
+        for unwanted_object in self.unwanted_objects_in_image:
+            if unwanted_object.unique_tag == unique_tag:
+                return unwanted_object
         return None
 
     def get_image_path_and_type(self,mask_path):

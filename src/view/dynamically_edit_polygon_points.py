@@ -27,7 +27,7 @@ def SelectPolygon(self, selectEvent):
             coordList.append([coordID, contour_coords[x], contour_coords[x + 1]])
             self.myCanvas.create_oval(x0, y0, x1, y1, fill='white', activefill='yellow', activeoutline='yellow', outline='grey', width=2, tags=(self.groupTag, coordID))
         self.all_contours[self.groupTag] = coordList
-        self.PointMove()
+        self.RepositionObject()
     else:
         error_message_text = 'Select a polygon to edit'
         self.view.open_error_message_popup_window(error_message_text)

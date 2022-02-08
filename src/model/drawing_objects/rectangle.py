@@ -13,13 +13,15 @@ class RectangleType(Enum):
     CL = 'CL'
 
 class Rectangle(DrawingObject):
-    def __init__(self, x0, y0, x1, y1, type, group_tag):
+    def __init__(self, x0, y0, x1, y1, type, group_tag, unique_tag = None):
         super().__init__(group_tag)
         self.x0 = min(x0,x1)
         self.y0 = min(y0,y1)
         self.x1 = max(x0,x1)
         self.y1 = max(y0,y1)
         self.rectangle_type = type
+        if unique_tag is not None:
+            self.unique_tag = unique_tag+self.unique_tag
 
     def get_colour(self):
         if self.rectangle_type == RectangleType.SPOT_AREA:
@@ -46,8 +48,12 @@ class Rectangle(DrawingObject):
         y2 = region['points'][2]['y']
         group_tag = region['id']
 
+
         if type in [RectangleType.RL, RectangleType.TL, RectangleType.CL, RectangleType.FI]:
             return ImageRegion._from_json_data(region, type, x1, y1, x2, y2, group_tag)
+        elif type == RectangleType.DUPLICATE:
+            unique_tag = 'duplicate_'
+            return Rectangle(x1, y1, x2, y2, type, group_tag,unique_tag)
         else:
             return Rectangle(x1, y1, x2, y2, type, group_tag)
 
@@ -68,6 +74,13 @@ class Rectangle(DrawingObject):
                                 {"x": left, "y": bottom}]}
 
         return newRegion
+
+    def set_centroid(self, x_centroid, y_centroid):
+        height, width = self.get_height_and_width()
+        self.x0 = x_centroid - width/2
+        self.y0 = y_centroid - height/2
+        self.x1 = x_centroid + width/2
+        self.y1 = y_centroid + height/2
 
     def get_centroid(self):
         x = self.x0 + ((self.x1 - self.x0)/2)

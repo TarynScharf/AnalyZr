@@ -1,0 +1,49 @@
+{
+    "asset": {
+        "format": ".png",
+        "id": -959350429,
+        "name": "123456_spots_p1_RL.png",
+        "path": "C:/Users/20023951/PycharmProjects/ZirconSeparation/test_data/RL_TL\\123456_spots_p1_RL.png",
+        "data capture image type": "RL",
+        "size": {
+            "width": 659,
+            "height": 1011
+        }
+    },
+    "regions": [
+        {
+            "id": "RL_06941ab6",
+            "type": "RECTANGLE",
+            "tags": [
+                "RL"
+            ],
+            "boundingBox": {
+                "height": 1011,
+                "width": 659,
+                "left": 0,
+                "top": 0
+            },
+            "points": [
+                {
+                    "x": 0,
+                    "y": 0
+                },
+                {
+                    "x": 659,
+                    "y": 0
+                },
+                {
+                    "x": 659,
+                    "y": 1011
+                },
+                {
+                    "x": 0,
+                    "y": 1011
+                }
+            ],
+            "TL_Path": "C:/Users/20023951/PycharmProjects/ZirconSeparation/test_data/RL_TL/123456_spots_p1_TL.png",
+            "RL_Path": "C:/Users/20023951/PycharmProjects/ZirconSeparation/test_data/RL_TL/123456_spots_p1_RL.png",
+            "Mask_Path": "C:/Users/20023951/PycharmProjects/ZirconSeparation/test_data/Masks\\123456_spots_p1_RL_mask_RL_06941ab6.png"
+        }
+    ]
+}

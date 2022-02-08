@@ -51,6 +51,7 @@ class Drawing():
         self.rectangleType = None
         self.breakline = None
         self.displayed_image = None
+        self.object_to_reposition= None #used for spot and unwanted object repositioning
 
     def DeleteObject(self, event):
         if len(event.widget.find_withtag('current'))==0:
@@ -223,36 +224,50 @@ class Drawing():
         #This variable looks unused but must be kept so that the image is not garbage collected
         self.displayed_image  = tk_img
 
-    def PointMove(self):
-        self.myCanvas.bind("<Button-1>", self.StartPointMove)
-        self.myCanvas.bind("<ButtonRelease-1>", self.FinishPointMove)
+    def RepositionObject(self):
+        self.myCanvas.bind("<Button-1>", self.StartRepositionObject)
+        self.myCanvas.bind("<ButtonRelease-1>", self.FinishObjectMove)
 
-    def StartPointMove(self, moveEvent):
+    def StartRepositionObject(self, moveEvent):
         thisObj = moveEvent.widget.find_withtag('current')[0]
         unique_tag = self.myCanvas.gettags(thisObj)[1]
-        self.myCanvas.bind("<B1-Motion>", self.UpdatePointMove)
-        self.myCanvas.bind("<ButtonRelease-1>", self.FinishPointMove)
-        self.spot = self.view.model.find_spot_in_measured_image_by_unique_tag(unique_tag)
-        self.myCanvas.delete(self.spot.unique_text_tag)
 
-    def UpdatePointMove(self, moveEvent):
-        self.spot.x0 = self.myCanvas.canvasx(moveEvent.x)
-        self.spot.y0 = self.myCanvas.canvasy(moveEvent.y)
-        self.myCanvas.coords(self.spot.unique_tag, self.spot.x0-6, self.spot.y0-6,self.spot.x0+6, self.spot.y0+6)
-        self.myCanvas.coords(self.spot.unique_text_tag, self.spot.x0-7, self.spot.y0-7)
 
-    def FinishPointMove(self, moveEvent):
+        self.myCanvas.bind("<ButtonRelease-1>", self.FinishObjectMove)
+
+        if 'spot' in unique_tag:
+            self.object_to_reposition = self.view.model.find_spot_in_measured_image_by_unique_tag(unique_tag)
+            self.myCanvas.delete(self.object_to_reposition.unique_text_tag)
+            self.myCanvas.bind("<B1-Motion>", self.UpdateObjectMove)
+        if 'duplicate' in unique_tag:
+            self.object_to_reposition = self.view.model.find_unwanted_object_in_measured_image_by_unique_tag(unique_tag)
+            self.myCanvas.delete(self.object_to_reposition.unique_text_tag)
+            self.myCanvas.bind("<B1-Motion>", self.UpdateObjectMove)
+
+    def UpdateObjectMove(self, moveEvent):
+        if 'spot_' in self.object_to_reposition.unique_tag:
+            self.object_to_reposition.x0 = self.myCanvas.canvasx(moveEvent.x)
+            self.object_to_reposition.y0 = self.myCanvas.canvasy(moveEvent.y)
+            self.myCanvas.coords(self.object_to_reposition.unique_tag, self.object_to_reposition.x0 - 6, self.object_to_reposition.y0 - 6, self.object_to_reposition.x0 + 6, self.object_to_reposition.y0 + 6)
+            self.myCanvas.coords(self.object_to_reposition.unique_text_tag, self.object_to_reposition.x0 - 7, self.object_to_reposition.y0 - 7)
+        if 'duplicate_' in self.object_to_reposition.unique_tag:
+            self.object_to_reposition.set_centroid(self.myCanvas.canvasx(moveEvent.x), self.myCanvas.canvasy(moveEvent.y))
+            self.myCanvas.coords(self.object_to_reposition.unique_tag, self.object_to_reposition.x0, self.object_to_reposition.y0, self.object_to_reposition.x1, self.object_to_reposition.y1)
+            self.myCanvas.coords(self.object_to_reposition.unique_text_tag, self.object_to_reposition.x0 - 7, self.object_to_reposition.y0 - 7)
+
+
+    def FinishObjectMove(self, moveEvent):
         self.myCanvas.unbind("<B1-Motion>")
         self.myCanvas.unbind("<ButtonRelease-1>")
         self.myCanvas.unbind("<Button-1>")
-        self.model.update_spot_location_in_json_file(self.spot)
-        self.draw_text(self.spot.get_text_tags(),self.spot.x0-7, self.spot.y0-7, self.spot.group_tag.replace('spot_',''), 'green')
-        self.spot = None
+        self.model.update_object_location_in_json_file(self.object_to_reposition)
 
-    #def start_region_capture(self):
-    #    #image region is temporarily tagged as RL. This tag is later overwritten
-    #    self.rectangleType = RectangleType.RL
-    #    self.RectDraw()
+        if 'spot_' in self.object_to_reposition.unique_tag:
+            self.draw_text(self.object_to_reposition.get_text_tags(), self.object_to_reposition.x0 - 7, self.object_to_reposition.y0 - 7, self.object_to_reposition.group_tag.replace('spot_', ''), 'green')
+        if 'duplicate' in self.object_to_reposition.unique_tag:
+            self.draw_text(self.object_to_reposition.get_text_tags(), self.object_to_reposition.x0, self.object_to_reposition.y0 - 15, self.object_to_reposition.rectangle_type.value, self.object_to_reposition.get_colour())
+
+        self.object_to_reposition = None
 
     def RectSpotDraw(self):
         self.rectangleType = RectangleType.SPOT_AREA
@@ -271,9 +286,6 @@ class Drawing():
         if self.rectangleType == RectangleType.SPOT_AREA:
             groupSuffix = 'NewSpot'
             self.text_label="spot area"
-        #if self.rectangleType == RectangleType.RL:
-        #    groupSuffix = 'Region'
-        #    self.text_label = 'Image Region'
 
         groupTag = groupSuffix +str(uuid.uuid4())
         rectStart_x = self.myCanvas.canvasx(event.x)
@@ -287,10 +299,7 @@ class Drawing():
         self.myCanvas.coords(self.rectangle.unique_tag, self.rectangle.x0, self.rectangle.y0, self.rectangle.x1, self.rectangle.y1)
 
     def RectFinalCoords(self, event):
-        #if self.rectangle.type() == RectangleType.RL:
-        #    RegionTypeDialog(self.view, self.model,self.rectangle)
 
-        #else:
         self.draw_interactive_rectange(self.rectangle)
         self.model.save_drawing_object_to_json(self.rectangle)
 

@@ -140,7 +140,7 @@ class SegmentationDialog():
         self.measureShapes.config(state=DISABLED)
         self.measureShapes.grid(column=0, row=3, padx=2, pady=5,sticky='w')
 
-        self.moveSpot = Button(self.Measure_Shapes_Frame, text="Reposition spot [q]", command=self.view.drawing.PointMove)
+        self.moveSpot = Button(self.Measure_Shapes_Frame, text="Reposition spot [q]", command=self.view.drawing.RepositionObject)
         self.moveSpot.config(state=DISABLED)
         self.moveSpot.grid(column=1, row=3, padx=2, pady=5, sticky='w')
 
@@ -155,6 +155,7 @@ class SegmentationDialog():
 
 
     def browse_for_mask_folder(self):
+        self.Segmentation_Window.grab_release()
         json_folder_path = self.view.get_json_path()
         if json_folder_path == None:
             return
@@ -169,6 +170,7 @@ class SegmentationDialog():
         self.view.model.threshold = None
         self.set_shortcuts_for_mask_scrolling(scroll)
         self.view.NextMaskImage(scroll, self)
+
         self.moveSpot.config(state=NORMAL)
         self.breakLine.config(state=NORMAL)
         self.saveMask.config(state = NORMAL)
@@ -184,7 +186,7 @@ class SegmentationDialog():
         self.view.master.bind("<Right>", lambda e: self.view.NextMaskImage(scroll_instance,self))
         self.view.master.bind("<Escape>", lambda e: self.drawing.UnbindMouse())
         self.view.master.bind("p", lambda e: self.view.drawing.BoundaryDraw())
-        self.view.master.bind("q",lambda e: self.view.drawing.PointMove())
+        self.view.master.bind("q", lambda e: self.view.drawing.RepositionObject())
         self.view.drawing.myCanvas.bind("<Button-3>", self.view.drawing.DeleteObject)
 
     def update_binarisation_button_availability(self):
@@ -300,7 +302,7 @@ class SegmentationDialog():
         self.measureShapes.config(state=NORMAL)
 
     def measure_shapes(self):
-        self.view.master.bind("q", lambda e: self.view.drawing.PointMove())
+        self.view.master.bind("q", lambda e: self.view.drawing.RepositionObject())
         self.moveSpot.config(state=NORMAL)
 
         mask_path = self.mask_file_path.get().strip()

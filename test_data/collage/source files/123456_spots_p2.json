@@ -136,6 +136,27 @@
                     "y": 1131.7077922077922
                 }
             ]
+        },
+        {
+            "id": "2.1",
+            "type": "POINT",
+            "tags": [
+                "SPOT"
+            ],
+            "boundingBox": {
+                "height": 5,
+                "width": 5,
+                "left": 1153.0,
+                "top": 563.0
+            },
+            "points": [
+                {
+                    "x": 1153.0,
+                    "y": 563.0
+                }
+            ],
+            "cl_texture": "sector",
+            "notes": "free form notes go here"
         }
     ],
     "version": "2.2.0"
