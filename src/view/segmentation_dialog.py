@@ -266,6 +266,7 @@ class SegmentationDialog():
             self.measureShapes.config(state=NORMAL)
 
         elif case_type == 'File':
+            self.view.model.set_image_details(path, ImageType.MASK)
             self.mask_file_path.set(path)
             self.update_textbox(self.mask_filepath_textbox, path)
             self.measureShapes.config(state=NORMAL)
