@@ -49,7 +49,7 @@ jobs:
             EXTENSION:
             RESOURCES: resources:resources
 
-          - os: windows-latest
+          - os: windows-2019
             OS_NAME: windows
             PYTHON_VERSION: 3.7
             EXTENSION: .exe
