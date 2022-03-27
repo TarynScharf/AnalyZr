@@ -86,12 +86,12 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install pyinstaller==4.10
+          pip install pyinstaller
 
       - name: Build with pyinstaller
         shell: bash
         run: |
-          pyinstaller --onefile --hidden-import='pkg_resources.py2_warn' --hidden-import='skimage.filters.rank.core_cy_3d' main.py
+          pyinstaller --onefile --hidden-import='pkg_resources.py2_warn' --hidden-import='skimage.filters.rank.core_cy_3d' AnalyZr.py
         # --icon=./resources/icon.ico
         # --add-data '${{ matrix.RESOURCES }}'
 
