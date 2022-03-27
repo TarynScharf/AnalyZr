@@ -41,7 +41,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-2019, ubuntu-latest] # ${{ matrix.OS_NAME }}
+        os: [windows-latest, ubuntu-latest] # ${{ matrix.OS_NAME }}
         include:
           - os: ubuntu-latest
             OS_NAME: ubuntu
@@ -49,7 +49,7 @@ jobs:
             EXTENSION:
             RESOURCES: resources:resources
 
-          - os: windows-2019
+          - os: windows-latest
             OS_NAME: windows
             PYTHON_VERSION: 3.7
             EXTENSION: .exe
@@ -86,7 +86,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install pyinstaller==4
+          pip install pyinstaller==4.10
 
       - name: Build with pyinstaller
         shell: bash
