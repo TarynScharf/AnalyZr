@@ -46,14 +46,19 @@ jobs:
           - os: ubuntu-latest
             OS_NAME: ubuntu
             PYTHON_VERSION: 3.7
-            EXTENSION:
+            EXTENSION: .gz
             RESOURCES: resources:resources
+            ZIP_TYPE: 'tar'
+            ZIP_EXTENSION:
+
 
           - os: windows-2019
             OS_NAME: windows
             PYTHON_VERSION: 3.7
             EXTENSION: .exe
             RESOURCES: resources;resources
+            ZIP_TYPE: 'zip'
+            ZIP_EXTENSION: .zip
 
     steps:
       - name: Check out code
@@ -91,7 +96,15 @@ jobs:
       - name: Build with pyinstaller
         shell: bash
         run: |
-          pyinstaller --onedir --debug=all --clean --hidden-import='pkg_resources.py2_warn' --hidden-import='skimage.filters.rank.core_cy_3d' AnalyZr.py
+          pyinstaller --onefile --debug=all --clean --hidden-import='pkg_resources.py2_warn' --hidden-import='skimage.filters.rank.core_cy_3d' AnalyZr.py
+
+      - name: Zip Release
+        uses: TheDoctor0/zip-release@0.6.1
+        with:
+          type: ${{matrix.ZIP_TYPE}}
+          filename: AnalyZr-${{ steps.get_version.outputs.version }}-${{ matrix.OS_NAME }}${{matrix.ZIP_EXTENSION}}
+          path: ./dist/AnalyZr
+          exclusions: '*.git* /*node_modules/* .editorconfig'
 
       - name: Upload release asset
         id: upload-release-asset
@@ -100,6 +113,6 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ steps.get_release_info.outputs.upload_url }}
-          asset_path: ./dist/AnalyZr${{matrix.EXTENSION}}
+          asset_path: ./dist/AnalyZr-${{ steps.get_version.outputs.version }}-${{ matrix.OS_NAME }}${{matrix.ZIP_EXTENSION}}
           asset_name: AnalyZr-${{ steps.get_version.outputs.version }}-${{ matrix.OS_NAME }}${{matrix.EXTENSION}}
           asset_content_type: application/zip
