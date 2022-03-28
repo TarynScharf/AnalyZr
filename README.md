@@ -4,7 +4,10 @@
 - AnalyZr uses .png images.
 
 ## Run the Software
-A stand-alone exe is available for Windows and Ubuntu on this repository. Download the latest release and run.
+- A zipped folder is available for Windows and Ubuntu on this repository. You can find the latest release to the left of your screen under 'Releases', alternatively navigate to: https://github.com/TarynScharf/AnalyZr/releases
+- Download the latest release and unzip to use. The unzipped folder contains all the files that AnalyZr will need to run. 
+- Find the AnalyZr.exe file in the unzipped folder and double-click on it to start the application.
+- A window will pop up showing the outputs of AnalyZr starting up. After a few seconds AnalyZr will open.
 
 ## Data Capture
 ### Load Files for Data Capture
