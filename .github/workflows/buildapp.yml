@@ -49,7 +49,7 @@ jobs:
             EXTENSION: .gz
             RESOURCES: resources:resources
             ZIP_TYPE: 'tar'
-            ZIP_EXTENSION: .gz
+            ZIP_EXTENSION: .tar.gz
 
 
           - os: windows-latest
