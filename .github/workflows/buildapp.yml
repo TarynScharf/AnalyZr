@@ -52,7 +52,7 @@ jobs:
             ZIP_EXTENSION: .gz
 
 
-          - os: windows-2019
+          - os: windows-latest
             OS_NAME: windows
             PYTHON_VERSION: 3.7
             EXTENSION: .exe
