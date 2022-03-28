@@ -41,7 +41,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-2019, ubuntu-latest] # ${{ matrix.OS_NAME }}
+        os: [windows-latest, ubuntu-latest] # ${{ matrix.OS_NAME }}
         include:
           - os: ubuntu-latest
             OS_NAME: ubuntu
