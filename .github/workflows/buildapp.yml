@@ -49,7 +49,7 @@ jobs:
             EXTENSION: .gz
             RESOURCES: resources:resources
             ZIP_TYPE: 'tar'
-            ZIP_EXTENSION:
+            ZIP_EXTENSION: .gz
 
 
           - os: windows-2019
@@ -113,6 +113,6 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ steps.get_release_info.outputs.upload_url }}
-          asset_path: AnalyZr-${{ steps.get_version.outputs.version }}-${{ matrix.OS_NAME }}${{matrix.ZIP_EXTENSION}}
+          asset_path: ./AnalyZr-${{ steps.get_version.outputs.version }}-${{ matrix.OS_NAME }}${{matrix.ZIP_EXTENSION}}
           asset_name: AnalyZr-${{ steps.get_version.outputs.version }}-${{ matrix.OS_NAME }}${{matrix.ZIP_EXTENSION}}
           asset_content_type: application/zip
