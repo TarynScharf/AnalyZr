@@ -96,7 +96,7 @@ jobs:
       - name: Build with pyinstaller
         shell: bash
         run: |
-          pyinstaller --onefile --debug=all --clean --hidden-import='pkg_resources.py2_warn' --hidden-import='skimage.filters.rank.core_cy_3d' AnalyZr.py
+          pyinstaller --onedir --debug=all --clean --hidden-import='pkg_resources.py2_warn' --hidden-import='skimage.filters.rank.core_cy_3d' AnalyZr.py
 
       - name: Zip Release
         uses: TheDoctor0/zip-release@0.6.1
