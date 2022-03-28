@@ -91,7 +91,7 @@ jobs:
       - name: Build with pyinstaller
         shell: bash
         run: |
-          pyinstaller --onefile --hidden-import='pkg_resources.py2_warn' --hidden-import='skimage.filters.rank.core_cy_3d' AnalyZr.py
+          pyinstaller --onedir --debug=all --clean --hidden-import='pkg_resources.py2_warn' --hidden-import='skimage.filters.rank.core_cy_3d' AnalyZr.py
 
       - name: Upload release asset
         id: upload-release-asset
