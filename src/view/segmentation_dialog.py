@@ -45,6 +45,9 @@ class SegmentationDialog():
         self.TLPath.set('')
         self.tlVar = IntVar()
 
+        self.list_of_grain_numbers= ['all']
+
+
         # VISUAL REFERENCES FRAME
 
         self.binarisation_frame = LabelFrame(self.Segmentation_Window, text='Visual References')
@@ -65,7 +68,6 @@ class SegmentationDialog():
 
         self.TL_Label = Label(self.binarisation_frame, text="TL Image")
         self.TL_Label.grid(column=0, row=1)
-
         self.TLTextBox = Entry(self.binarisation_frame, width=150, textvariable=self.TLPath)
         self.TLTextBox.grid(column=1, row=1)
         self.browseTL = Button(self.binarisation_frame, text="...", width=5, command=lambda: self.Browse('TL'))
@@ -84,6 +86,18 @@ class SegmentationDialog():
         self.saveMask = Button(self.binarisation_frame, text="Save Mask", width = 10, command=lambda: self.save_mask())
         self.saveMask.config(state=DISABLED)
         self.saveMask.grid(column=1, row=2, padx=2, pady=5,sticky='w')
+
+        self.loadJson = Button(self.binarisation_frame, text="Load Json Files", width=16, command=lambda: self.view.set_json_folder_path('json',self.view.myFrame))
+        self.loadJson.config()
+        self.loadJson.grid(column=1, row=2, padx=80, pady=5, sticky='w')
+
+        self.showSpots = Button(self.binarisation_frame, text="Load Spots", width=10,command=lambda: self.load_spots())
+        self.showSpots.config(state=HIDDEN)
+        self.showSpots.grid(column=1, row=2, padx=200, pady=5, sticky='w')
+
+        self.removeBoundariesWithoutSpotsButton = Button(self.binarisation_frame, text="Remove Boundaries without Spots", width=30,command=lambda: self.remove_boundaries_without_spots())
+        self.removeBoundariesWithoutSpotsButton.config(state=HIDDEN)
+        self.removeBoundariesWithoutSpotsButton.grid(column=1, row=2, padx=300, pady=5, sticky='w')
 
         #EDIT BOUNDARIES FRAME
         self.segmentation_label_frame = LabelFrame(self.Segmentation_Window, text='Image Segmentation')
@@ -118,10 +132,11 @@ class SegmentationDialog():
         self.mask_filepath_textbox = Entry(self.Measure_Shapes_Frame, width=100, textvariable=self.mask_file_path)
         self.mask_filepath_textbox.grid(column=1, row=1, sticky='w')
 
+
         self.Browse_File = Button(self.Measure_Shapes_Frame, text="...", width=5, command=lambda: self.Browse('File'))
         self.Browse_File.grid(column=2, row=1, padx=3, pady=5,sticky='w')
 
-        self.Display_Mask = Button(self.Measure_Shapes_Frame, text="Display Mask Image", width=20, command=lambda: self.display_mask())
+        self.Display_Mask = Button(self.Measure_Shapes_Frame, text="Load Mask Image", width=20, command=lambda: self.display_mask())
         self.Display_Mask.grid(column=3, row=1, padx=3, pady=5,sticky='w')
 
         self.Process_Folder = Label(self.Measure_Shapes_Frame, text="Process Mask Folder")
@@ -144,6 +159,15 @@ class SegmentationDialog():
         self.moveSpot.config(state=DISABLED)
         self.moveSpot.grid(column=1, row=3, padx=2, pady=5, sticky='w')
 
+        self.ShowGrainText = Label(self.Measure_Shapes_Frame, text="Isolate selected grain")
+        self.ShowGrainText.grid(column=1, row=3, padx=130, pady=5, sticky='w')
+        self.ShowGrainText.config(state=DISABLED)
+        self.ShowGrainCombobox = Combobox(self.Measure_Shapes_Frame, values = self.list_of_grain_numbers)
+        self.ShowGrainCombobox.config(state= DISABLED)
+        self.ShowGrainCombobox.grid(column=1, row=3, padx=250, pady=5, sticky='w')
+        self.ShowGrainCombobox.bind('<<ComboboxSelected>>', self.DisplaySelectedGrain)
+
+
         self.view.master.unbind("s")
         self.view.master.unbind("a")
         self.view.master.unbind("d")
@@ -152,7 +176,16 @@ class SegmentationDialog():
         self.view.master.unbind("l")
         self.view.master.bind("p", lambda e: self.view.drawing.BoundaryDraw())
         self.view.master.unbind("q")
+        self.view.master.bind("b", lambda e: self.view.drawing.DrawBreakLine())
+        self.view.master.bind("s", lambda e: self.view.save_image())
 
+    def remove_boundaries_without_spots(self):
+        self.view.remove_boundaries_without_spots()
+
+
+    def DisplaySelectedGrain(self, event):
+        combobox_value = self.ShowGrainCombobox.get()
+        self.view.DisplaySelectedGrain(combobox_value)
 
     def browse_for_mask_folder(self):
         self.Segmentation_Window.grab_release()
@@ -180,6 +213,42 @@ class SegmentationDialog():
         self.grain_boundary_capture.config(state = NORMAL)
         self.BinariseButton.config(state=NORMAL)
 
+    def load_spots(self):
+        mask_path = self.mask_file_path.get()
+        rl_path = self.RLPath.get()
+        tl_path = self.TLPath.get()
+        json_base_name = None
+
+        if mask_path != '':
+            pattern = '_mask_'
+            match = re.search(pattern,mask_path)
+            json_base_name = mask_path[0:match.start()]
+
+        elif rl_path !='' and tl_path !='':
+            rl_path_split = rl_path.split('_')
+            tl_path_split  = tl_path.split('_')
+            rl_base_name = '_'.join(rl_path_split[0:-1])
+            tl_base_name = '_'.join(tl_path_split[0:-1])
+            if rl_base_name != tl_base_name:
+                messagebox("RL and TL images do not have the same base name.")
+                return
+            json_base_name = rl_base_name
+
+        elif self.RLPath.get() == '' and self.TLPath.get() =='':
+            messagebox("No mask, RL or TL image selected.")
+            return
+
+        elif self.RLPath.get != '':
+            rl_path = self.RLPath.get().split('_')
+            json_base_name = '_'.join(rl_path[0:- 1])
+        elif self.TLPath.get !='':
+            tl_path = self.TLPath.get().split('_')
+            json_base_name = '_'.join(tl_path[0:- 1])
+
+        self.view.load_spots(json_base_name)
+        self.moveSpot.config(state=NORMAL)
+        self.removeBoundariesWithoutSpotsButton.config(state=NORMAL)
+
 
     def set_shortcuts_for_mask_scrolling(self, scroll_instance):
         self.view.master.bind("<Left>", lambda e: self.view.PrevMaskImage(scroll_instance,self))
@@ -187,6 +256,8 @@ class SegmentationDialog():
         self.view.master.bind("<Escape>", lambda e: self.drawing.UnbindMouse())
         self.view.master.bind("p", lambda e: self.view.drawing.BoundaryDraw())
         self.view.master.bind("q", lambda e: self.view.drawing.RepositionObject())
+        self.view.master.bind("b", lambda e: self.view.drawing.DrawBreakLine())
+        self.view.master.bind("s", lambda e: self.view.save_image())
         self.view.drawing.myCanvas.bind("<Button-3>", self.view.drawing.DeleteObject)
 
     def update_binarisation_button_availability(self):
@@ -214,7 +285,8 @@ class SegmentationDialog():
         self.undo_delete.config(state=NORMAL)
         self.measureShapes.config(state=NORMAL)
         self.moveSpot.config(state = DISABLED)
-
+        self.mask_file_path.set('')
+        self.update_textbox(self.mask_filepath_textbox, '')
 
     def display_image(self, image_type):
         RLPath = self.RLPath.get()
@@ -302,6 +374,8 @@ class SegmentationDialog():
         self.update_textbox(self.RLTextBox, rl_path)
         self.measureShapes.config(state=NORMAL)
 
+        self.deactivate_grain_selection_combobox()
+
     def measure_shapes(self):
         self.view.master.bind("q", lambda e: self.view.drawing.RepositionObject())
         self.moveSpot.config(state=NORMAL)
@@ -312,6 +386,21 @@ class SegmentationDialog():
 
         self.view.start_measure_shapes(mask_path)
         self.moveSpot.config(state=NORMAL)
+
+        self.activate_grain_selection_combobox()
+
+    def activate_grain_selection_combobox(self):
+        grain_numbers = self.view.get_grain_labels()
+        self.list_of_grain_numbers.extend(grain_numbers[1:])
+        self.ShowGrainCombobox['values'] = self.list_of_grain_numbers
+        self.ShowGrainCombobox.config(state='readonly')
+        self.ShowGrainText.config(state=NORMAL)
+
+    def deactivate_grain_selection_combobox(self):
+        self.ShowGrainCombobox.config(state=DISABLED)
+        self.ShowGrainText.config(state=DISABLED)
+
+
 
     def update_textbox(self, textbox, text_string):
         textbox.delete(0,END)

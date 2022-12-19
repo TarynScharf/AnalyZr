@@ -48,7 +48,6 @@ class DataCaptureDialog():
         self.image_type_combobox.bind("<<ComboboxSelected>>", self.activate_buttons)
         self.image_type_combobox.grid(column=1, row=1, padx=2, pady=5, sticky='w')
 
-
         # browse for json files
         self.load_json_folder_check_button = Checkbutton(self.browse_for_files_window,state=DISABLED, text='Load jsons separately', variable=self.load_json_folder, command=lambda: self.activate_browse_for_json_folder())
         self.load_json_folder_check_button.grid(column=0, columnspan=2, row=2, padx=2, pady=5, sticky='w')
@@ -140,7 +139,7 @@ class DataCaptureDialog():
                             self.view.model.create_new_json_file(file_name, data_capture_image_type, json_folder)
                         self.read_and_display_image_data(image_folder, json_folder,data_capture_image_type)
                     else:
-                        messagebox.showinfo("Error", "No json files in the selected folder.")
+                        messagebox.showinfo("Error", "If you do not wish to create json files now, please ensure all image files in the folder have an associated json file.")
                         self.browse_for_files_window.lift()
                         return
         except Exception as e:

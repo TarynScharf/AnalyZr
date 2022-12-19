@@ -10,13 +10,15 @@ from src.model.json_data import JsonData
 from src.model.region_measurements import RegionMeasurement
 
 class MeasurementDialog():
-    def __init__(self, view,measurements):
+    def __init__(self, view,measurements, mask_path, image_to_save):
         self.measurements = measurements
         self.view = view
+        self.mask_path = mask_path
+        self.image = image_to_save
         self.measurement_window = Toplevel(self.view.master)
         self.measurement_window.title("Image Segmentation Toolbox")
         self.measurement_window.minsize(400, 110)
-        self.measurement_window.lift()
+        self.measurement_window.attributes("-topmost", 1)
         self.measurement_window.grab_set()
 
         self.buttons_frame = tk.Frame(self.measurement_window, width=400, height=150)
@@ -57,6 +59,11 @@ class MeasurementDialog():
                 e.grid(row=0, column=j, sticky = 'w', padx=5)
 
         for i in range(len(measurements)):
+            #Righto, so if the list of table rows get very large, say nearly 400, then tkinter call save dialog fails with unaamed exception.
+            #This shows the top 200 measurements so avoid this error, and to avoid a very large and slow table.
+            #All measurements are still written to the csv.
+            if i==200:
+                break
             row_entry = measurements[i].as_list()
             for j in range(number_of_columns):
                     e = Label(self.table_frame,text = str(row_entry[j]),anchor='w',justify=LEFT)
@@ -67,7 +74,7 @@ class MeasurementDialog():
 
     def write_to_csv(self,):
         filepath = filedialog.asksaveasfilename(defaultextension = '.csv', filetypes = [("CSV Files","*.csv")], title="Save As")
-        self.view.model.write_to_csv(filepath, self.measurements)
+        self.view.model.write_to_csv(filepath, self.measurements, self.mask_path, self.image)
 
     def write_to_database(self):
         self.view.ensure_database_path_set()

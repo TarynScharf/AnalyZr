@@ -49,37 +49,40 @@ class RegionMeasurement():
         self.notes = ''
 
     def as_list(self):
-        contour = ",".join([f'({x},{y})'for x,y in np.squeeze(self.contour)])
-        image_dimensions = f'{int(round(self.image_region.y0))},{int(round(self.image_region.x0))},{int(round(self.image_region.y1))},{int(round(self.image_region.x1))}'
-        def round_decimals_for_display(value, decimal=2):
-            return str(round(value,decimal))
+        try:
+            contour = ",".join([f'({x},{y})'for x,y in np.squeeze(self.contour)])
+            image_dimensions = f'{int(round(self.image_region.y0))},{int(round(self.image_region.x0))},{int(round(self.image_region.y1))},{int(round(self.image_region.x1))}'
+            def round_decimals_for_display(value, decimal=2):
+                return str(round(value,decimal))
 
-        return [self.sampleid,
-                self.image_id,
-                self.grain_number,
-                self.grain_spots,
-                round_decimals_for_display(self.grain_centroid[0]),
-                round_decimals_for_display(self.grain_centroid[1]),
-                round_decimals_for_display(self.area),
-                round_decimals_for_display(self.equivalent_diameter),
-                round_decimals_for_display(self.perimeter),
-                round_decimals_for_display(self.minor_axis_length),
-                round_decimals_for_display(self.major_axis_length),
-                round_decimals_for_display(self.solidity),
-                round_decimals_for_display(self.convex_area),
-                round_decimals_for_display(self.formFactor),
-                round_decimals_for_display(self.roundness),
-                round_decimals_for_display(self.compactness),
-                round_decimals_for_display(self.aspectRatio),
-                round_decimals_for_display(self.minFeret),
-                round_decimals_for_display(self.maxFeret),
-                image_dimensions,
-                self.mask_image,
-                contour,
-                self.scale,
-                self.cl_texture,
-                self.notes
-                ]
+            return [self.sampleid,
+                    self.image_id,
+                    self.grain_number,
+                    self.grain_spots,
+                    round_decimals_for_display(self.grain_centroid[0]),
+                    round_decimals_for_display(self.grain_centroid[1]),
+                    round_decimals_for_display(self.area),
+                    round_decimals_for_display(self.equivalent_diameter),
+                    round_decimals_for_display(self.perimeter),
+                    round_decimals_for_display(self.minor_axis_length),
+                    round_decimals_for_display(self.major_axis_length),
+                    round_decimals_for_display(self.solidity),
+                    round_decimals_for_display(self.convex_area),
+                    round_decimals_for_display(self.formFactor),
+                    round_decimals_for_display(self.roundness),
+                    round_decimals_for_display(self.compactness),
+                    round_decimals_for_display(self.aspectRatio),
+                    round_decimals_for_display(self.minFeret),
+                    round_decimals_for_display(self.maxFeret),
+                    image_dimensions,
+                    self.mask_image,
+                    contour,
+                    self.scale,
+                    self.cl_texture,
+                    self.notes
+                    ]
+        except:
+            pass
 
     @staticmethod
     def get_headers():

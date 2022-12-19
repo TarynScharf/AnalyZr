@@ -465,8 +465,7 @@ class Drawing():
         size = contour.size()
         if size<2:
             return # if there is only one point, don't draw any lines.
-
-        self.myCanvas.delete(self.uniqueTag)  # delete all pre-existing lines and redraw
+        self.myCanvas.delete(contour.unique_tag)  # delete all pre-existing lines and redraw
         if size > 2:
             self.myCanvas.create_polygon(coords, fill='', outline='red', activeoutline='yellow', width=2, tags=contour.get_tags())  # redraw,now includes the added point
         else:

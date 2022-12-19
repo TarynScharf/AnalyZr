@@ -82,6 +82,80 @@ class View:
 
         self.json_folder_path = tk.StringVar()
 
+    def remove_boundaries_without_spots(self):
+        self.model.remove_boundaries_without_spots()
+        threshold_image = Image.fromarray(self.model.threshold)
+        self.display_image(threshold_image)
+        for contour in self.model.contours_by_group_tag:
+            self.drawing.draw_contour(self.model.contours_by_group_tag[contour])
+
+
+
+    def load_spots(self,json_base_name):
+
+        if json_base_name is None:
+            raise ValueError(f'No json name identified.')
+
+        json_file_path, image_type,image_path  = self.model.find_json_file_when_image_type_is_unknown(json_base_name)
+        region_id = JsonData.get_region_id_from_file_path(image_type, image_path)
+
+        '''
+        json_file_path_RL = None
+        json_file_path_TL = None
+        if self.model.rl_path != "":
+            image_type = ImageType.RL
+            json_file_path_RL, region_id_RL,sample_id_RL = self.model.get_json_path_and_region_id_and_sample_id_for_measurement(self.model.rl_path,ImageType.RL)
+
+        if self.model.tl_path !="" and self.model.rl_path=="":
+            image_type = ImageType.TL
+            json_file_path_TL, region_id_TL, sample_id_TL = self.model.get_json_path_and_region_id_and_sample_id_for_measurement(self.model.tl_path,ImageType.TL)
+
+        if json_file_path_RL != None and json_file_path_TL != None:
+            messagebox.showinfo('Error', 'A json file exists for both the RL and TL image. Only one json file is allowed per sample.')
+            return
+
+        if json_file_path_RL != None:
+            json_path = json_file_path_RL
+
+        if json_file_path_TL != None:
+            json_path = json_file_path_TL
+
+        json_file_path, region_id, sample_id = self.model.get_json_path_and_region_id_and_sample_id_for_measurement(json_path, image_type)
+        if region_id == None:
+            messagebox.showinfo('Error',
+                                f'Image Region {region_id} cannot be found in file {os.path.join(self.view.model.json_folder_path, json_file_path)}.\n'
+                                'The mask cannot be displayed.')
+            return'''
+
+        data = JsonData.load_all(json_file_path)
+
+        spotList, regions_to_remove_from_mask_image, scale_in_real_world_units, image_region = self.model.read_spots_unwanted_scale_from_json(data, json_file_path, region_id, mask_scrolling=False)
+
+        self.model.spots_in_measured_image = spotList
+
+        for spot in spotList:
+            self.drawing.draw_interactive_spot(spot, 'green2', 'green')
+
+        for region_to_remove in regions_to_remove_from_mask_image:
+            self.drawing.draw_interactive_rectangel(region_to_remove)
+
+
+    def DisplaySelectedGrain(self,grain_number):
+        selected_grain_image = copy.deepcopy(self.model.threshold)
+
+        if grain_number.isdigit():
+            selected_grain_image[np.where(selected_grain_image != int(grain_number))]=0
+            selected_grain_image[np.where(selected_grain_image == int(grain_number))] = 255
+        elif grain_number == 'all':
+            selected_grain_image[np.where(selected_grain_image != 0)]=255
+
+        image_to_display = Image.fromarray(selected_grain_image.astype(np.uint8))
+        self.display_image(image_to_display)
+
+    def get_grain_labels(self):
+        list_of_grain_labels = np.unique(self.model.threshold)
+        return list_of_grain_labels
+
     def save_image(self):
         image_file_name = filedialog.asksaveasfilename(defaultextension='.jpg')
         postscript = self.drawing.myCanvas.postscript(colormode='color')
@@ -329,6 +403,7 @@ class View:
 
     def binariseImages(self,RLPath, TLPath, rlVar, tlVar):
         self.model.set_rl_tl_paths_and_usage(RLPath, TLPath,rlVar, tlVar)
+        self.model.clear_mask_path()
         try:
             image,contours,self.width,self.height = self.model.binariseImages()
         except ValueError as e:
@@ -345,30 +420,37 @@ class View:
     def start_measure_shapes(self,mask_path):
         try:
             image_to_display, contours, spotList, region_measurements = self.model.measure_shapes(mask_path,False)
+            image_for_output_file = np.float32(copy.deepcopy(image_to_display))
         except ValueError as e:
             self.open_error_message_popup_window(str(e))
             return
         if image_to_display == None or contours == None or spotList == None or region_measurements == None:
             return
-        image_for_output_file = np.float32(copy.deepcopy(image_to_display))
 
         self.drawing.clear_canvas_and_display_image(image_to_display)
         for contour in contours:
             self.drawing.draw_contour(contour)
             #for output image file
-            #paired_coords = contour.paired_coordinates()
-            #cv2.polylines(image_for_output_file,paired_coords, True, (0,0,255))
-
+            #cv2.polylines needs the coordinates as a tuple
+            paired_coords = tuple(contour.paired_coordinates())
+            #cv2.polylines needs coordinates as int not float
+            #int_paired_coordinates = tuple(tuple(map(int, tup)) for tup in paired_coords)
+            #cv2.polylines(image_for_output_file,int_paired_coordinates, True, (0,0,255))
+            cv2.polylines(image_for_output_file,
+                          np.array(contour.paired_coordinates(), dtype=np.int32).reshape((-1, 1, 2)), True, (0, 0, 255),
+                          2)
         for spot in spotList:
             self.drawing.draw_interactive_spot(spot, 'green2','green')
             #for output image file
-            #cv2.circle(image_for_output_file,(spot.x0,spot.y0),6,(0,255,0),2)
-            #cv2.putText(image_for_output_file,spot.group_tag.replace('spot_',''),(spot.x0, spot.y0+15), cv2.QT_FONT_BOLD,8,(0,255,0),2, cv2.LINE_AA)
+            #cv2.circle center coordinates must be int not float, thus round the spot coordinates
+            cv2.circle(image_for_output_file,(round(spot.x0),round(spot.y0)),4,(0,255,0),-1)
+            cv2.putText(image_for_output_file,spot.group_tag.replace('spot_',''),(round(spot.x0), round(spot.y0)+15), cv2.FONT_HERSHEY_SIMPLEX,0.5,(0,255,0),1, cv2.LINE_AA)
 
-        MeasurementDialog(self,region_measurements)
-        mask_without_extension = FileUtils.get_name_without_extension(mask_path)
-        output_image_name = mask_without_extension+'_measured.png'
-        cv2.imwrite(output_image_name,image_for_output_file)
+        MeasurementDialog(self,region_measurements, mask_path,image_for_output_file)
+        #mask_without_extension = FileUtils.get_name_without_extension(mask_path)
+        #output_image_name = mask_without_extension + '_measured.png'
+        #cv2.imwrite(output_image_name, image_for_output_file)
+
 
     def process_all_masks_in_folder(self, mask_file_folder):
         all_folder_measurements = []
@@ -381,7 +463,7 @@ class View:
                 try:
                     _, _, _, measurements = self.model.measure_shapes(current_mask_file_path,True)
                     if measurements == None:
-                        return
+                        continue
                     all_folder_measurements = all_folder_measurements+measurements
                 except ValueError as e:
                     self.open_error_message_popup_window(str(e))

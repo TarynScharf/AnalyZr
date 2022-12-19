@@ -7,6 +7,7 @@ import os
 import re
 import tkinter as tk
 from tkinter import messagebox
+from scipy.ndimage import label
 
 import cv2
 import matplotlib
@@ -34,7 +35,6 @@ from src.model.image_data import ImageData
 from src.model.image_type import ImageType
 from src.model.json_data import JsonData
 from src.model.region_measurements import RegionMeasurement
-
 
 class Model():
     def __init__(self):
@@ -99,6 +99,46 @@ class Model():
 
         self.current_image_index = 0 #incrementor that keeps track of where we are in the list of images when displaying them for data capture
 
+    def find_json_file_when_image_type_is_unknown(self, json_base_name):
+        json_file_name = None
+        image_type = None
+        json_count = 0
+
+        if self.json_folder_path == None or self.json_folder_path == '':
+            messagebox.showinfo('Error', 'No json folder has been selected.')
+            return
+
+        for path, folder, files in os.walk(self.json_folder_path):
+            for file in files:
+                if os.path.splitext(file)[1] == '.json':
+                    if os.path.basename(json_base_name) in file:
+                        json_count+=1
+                        if json_count>1:
+                            raise ValueError('Multiple json files with the same base name.')
+
+                        json_file_name = os.path.join(self.json_folder_path,file)
+                        data = JsonData.load_all(json_file_name)
+                        image_type = data.data_capture_image_type
+                        image_path = data.data_capture_image_path
+
+            return json_file_name, image_type,image_path
+
+
+    def remove_boundaries_without_spots(self):
+        contours_to_delete=[]
+        for group_tag in self.contours_by_group_tag:
+            delete_contour=True
+            contour_coordinates = self.contours_by_group_tag[group_tag].paired_coordinates()
+            boundary = matplotlib.path.Path(contour_coordinates, closed=True)
+            for spot in self.spots_in_measured_image:
+                spotInside = boundary.contains_point([spot.x0, spot.y0])
+                if spotInside == True:
+                        delete_contour= False
+            if delete_contour==True:
+                contours_to_delete.append(group_tag)
+        for cont in contours_to_delete:
+            self.delete_contour(cont)
+
     def DeleteObject(self, group_tag):
         if 'line_' in group_tag: #breaklines don't get written to a json file
             self.breaklines = [x for x in self.breaklines if x.group_tag != group_tag]
@@ -110,8 +150,14 @@ class Model():
             contour_coords = self.contours_by_group_tag[group_tag].paired_coordinates()
             polygon = shapely.geometry.Polygon(contour_coords)  # create a shapely polygon
             representative_point = polygon.representative_point()  # using the shapely polygon, get a point inside the polygon
-            self.thresholsd = skimage.measure.label(self.threshold, background=0, connectivity=None).astype('uint8')
+            cv2.imwrite('C:/Users/20023951/Documents/CaseStudy_JackHills/Zircon Images/Mount_37A/Masks/threshold_delete_object_line115.png', self.threshold)
+            self.threshold, num_features = label(self.threshold)
+            cv2.imwrite('C:/Users/20023951/Documents/CaseStudy_JackHills/Zircon Images/Mount_37A/Masks/labeled_delete_object_line118.png',
+                        self.threshold)
+
+            #self.threshold = skimage.measure.label(self.threshold, background=0, connectivity=None).astype('uint8')
             blob_label = self.threshold[int(representative_point.y),int(representative_point.x)]
+
             if int(blob_label)!=0:
                 self.threshold[self.threshold==blob_label]=0
             self.delete_contour(group_tag)
@@ -204,19 +250,24 @@ class Model():
 
         #label each grain uniquely
         updatedMask[updatedMask > 0] = 255
-        labelim = skimage.measure.label(updatedMask, background=0, connectivity=None)
-        self.threshold = labelim.astype('uint8')
+        #labelim = skimage.measure.label(updatedMask, background=0, connectivity=None)
+        self.threshold = updatedMask #labelim.astype('uint8')
 
-        image_to_display = self.Current_Image
+        image_to_display = updatedMask
         image_pill = Image.fromarray(image_to_display)
         self.img = ImageTk.PhotoImage(image=image_pill)
         contours = self.extract_contours_from_image('extcont')
+
 
         return image_pill, contours
 
     def extract_contours_from_image(self,prefix,filter_fn = None):
         # paint the contours on
-        contoursFinal, hierarchyFinal = cv2.findContours(self.threshold, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+
+        copy_of_threshold = copy.deepcopy(self.threshold)
+        copy_of_threshold[copy_of_threshold>0]=255
+        copy_of_threshold_unint8 = copy_of_threshold.astype('uint8')
+        contoursFinal, hierarchyFinal = cv2.findContours(copy_of_threshold_unint8, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
         count_contour = 0
         self.contours_by_group_tag.clear()
         for i in range(len(contoursFinal)):
@@ -227,11 +278,14 @@ class Model():
                 continue
             if hierarchyFinal[0][i][3] == -1:
                 prefix='extcont'
+            else:
+                prefix='contour'
             coordinate_pairs = np.squeeze(contoursFinal[i])
             groupID = prefix+"_" + str(count_contour)
             polygon = Contour(groupID, coordinate_pairs)
             self.contours_by_group_tag[polygon.group_tag] = polygon
             count_contour += 1
+
 
         return list(self.contours_by_group_tag.values())
 
@@ -351,8 +405,10 @@ class Model():
         self.rl_image = None
         self.tl_image = None
 
-
+        #AnalyZr images are black and white, only 1 channel is required
         self.threshold = cv2.imread(mask_path)[:, :, 0]
+        #In the event that a "binary" image is loaded from another application, and the pixel values vary within the image
+        #assume anything that isn't background (0) must be foreground (255)
         self.threshold[self.threshold > 0] = 255
         self.height =self.threshold.shape[0]
         self.width = self.threshold.shape[1]
@@ -398,7 +454,7 @@ class Model():
         for name in files:
             extension = os.path.splitext(name)[1]
             # check for images
-            if extension.lower() == '.png' and self.is_file_name_of_image_type(name,data_capture_image_type):
+            if extension.lower() in ['.png', '.jpeg', '.jpg'] and self.is_file_name_of_image_type(name,data_capture_image_type):
                 has_images = True
                 if data_capture_image_type == ImageType.COLLAGE:
                     file_name_without_imagetype = name.replace('_'+data_capture_image_type.name,'')
@@ -463,7 +519,7 @@ class Model():
 
         self.sampleList.sort()
 
-    def write_to_csv(self,filepath, measurements):
+    def write_to_csv(self,filepath, measurements, mask_path, image_to_save):
         headers = RegionMeasurement.get_headers()
 
         with open(filepath, mode='w', newline='') as csv_file:
@@ -472,6 +528,10 @@ class Model():
 
             for measurement in measurements:
                 csv_writer.writerow(measurement.as_list())
+
+        mask_without_extension = FileUtils.get_name_without_extension(mask_path)
+        output_image_name = mask_without_extension + '_measured.png'
+        cv2.imwrite(os.path.join(os.path.dirname(filepath),output_image_name), image_to_save)
 
     def set_database_file_path(self, database_file_path):
         self.database_file_path = database_file_path
@@ -521,6 +581,7 @@ class Model():
         self.mask_path = mask_path
 
     def write_mask_to_png(self, mask_file_path):
+        #self.threshold = self.convert_contours_to_mask_image(self.height, self.width, self.contours_by_group_tag.values())
         self.threshold[self.threshold > 0] = 255
         cv2.imwrite(mask_file_path, self.threshold)
 
@@ -542,22 +603,25 @@ class Model():
         im, jf = self.get_json_file_and_image()
         self.currentSample = im.split("_")[0]
         fileName = os.path.join(self.image_folder_path, im)
-        image = Image.open(fileName)
+        image_cv2 = cv2.imread(fileName)
+        image = Image.fromarray(image_cv2)
+
+        #image = Image.open(fileName)
         json_file_path = os.path.join(self.json_folder_path, jf)
 
         image_data = JsonData.load_all(json_file_path)
         return image, image_data
 
     def preprocess_image_for_measurement(self, mask_file_path):
-        if mask_file_path is not None and mask_file_path.strip() != '':
-            self.threshold = cv2.imread(mask_file_path)[:, :, 0]
-            self.width = self.threshold.shape[1]
-            self.height = self.threshold.shape[0]
-        image_remove = ZirconSeparationUtils.removeSmallObjects(self.threshold,15)  # remove small objects below a threshold size (max object size/15)
+        #if mask_file_path is not None and mask_file_path.strip() != '':
+        #    self.threshold = cv2.imread(mask_file_path)[:, :, 0]
+        #    self.width = self.threshold.shape[1]
+        #    self.height = self.threshold.shape[0]
+        image_remove = ZirconSeparationUtils.removeSmallObjects(self.threshold,1000) #30 # remove small objects below a threshold size (max object size/15)
         image_clear = skimage.segmentation.clear_border(labels=image_remove, bgval=0,buffer_size=1)  # remove objects that touch the image boundary
-        image_clear_uint8 = image_clear.astype('uint8')
-
-        return image_clear_uint8
+        #image_clear = skimage.segmentation.clear_border(labels=self.threshold, bgval=0,buffer_size=1)  # remove objects that touch the image boundary
+        #image_clear_uint8 = image_clear.astype('uint8')
+        return image_clear#image_clear_uint8
 
     def read_spots_unwanted_scale_from_json(self,json_data, json_file_path,regionID, mask_scrolling = None):
         spotList = []
@@ -616,7 +680,6 @@ class Model():
                 imageWidth = region['boundingBox']['width']
                 imageHeight = region['boundingBox']['height']
                 return imageTop, imageLeft, imageWidth, imageHeight
-
         return None
 
     def remove_unwanted_objects_from_binary_image(self,objects_to_remove):
@@ -641,7 +704,8 @@ class Model():
             representative_point = polygon.representative_point()  # using the shapely polygon, get a point inside the polygon
             # get the region label at the representative point
             region_label = self.threshold[int(representative_point.y), int(representative_point.x)]
-            if region_label == label:  # is this boundary around the region in question?
+
+            if region_label == label:
                 boundary = matplotlib.path.Path(np.squeeze(contour), closed=True)
                 for spot in spotList:
                     spotInside = boundary.contains_point([spot.x0, spot.y0])
@@ -654,8 +718,22 @@ class Model():
 
     def create_measurement_table(self, sampleid, regionID, image_region, micPix, mask_file_path, all_spots):
         self.contours_by_group_tag = {}
-        contoursFinal, hierarchyFinal = cv2.findContours(self.threshold, cv2.RETR_TREE,
-                                                         cv2.CHAIN_APPROX_SIMPLE)  # cv2.CHAIN_APPROX_SIMPLE, cv2.RETR_EXTERNAL
+        copy_of_threshold = copy.deepcopy(self.threshold)
+        #cv2.findContours requires a unint8 image
+        #Converting the image to uint8 will cap the pixel value at 255
+        #Currently all objects are numbered 1-number of objects. If the number of objects in the image exceeds 255, they will be relabeled starting from zero
+        #This means that more than one object will have the same label.
+        #It also means that one object will be recoded to 0, which is background value, and the contour algorithm won't detect it as an object to contour
+        #To avoid this, I set all positive values to 255, prior to converting to uint8 for contouring
+        copy_of_threshold[copy_of_threshold>0] = 255
+        copy_of_threshold_unint8 = copy_of_threshold.astype('uint8')
+
+        contoursFinal, hierarchyFinal = cv2.findContours(copy_of_threshold_unint8, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+
+        for i in range (len(hierarchyFinal[0])):
+            if hierarchyFinal[0][i][3] != -1:
+                raise ValueError('Image contains holes. Please ensure no holes are present')
+
         props = skimage.measure.regionprops(self.threshold,)
 
         measurements = []
@@ -663,7 +741,7 @@ class Model():
         for x in range(0, len(props)):
             # Convex image is good enough because it'll give us the max points and min edges for maxFeret and minFeret
             maxFeret, minFeret = zircon_measurement_utils.feret_diameter(props[x].convex_image)
-            spots_in_region,contour = self.find_spots_in_region(props[x].label,all_spots,contoursFinal)
+            spots_in_region,contour = self.find_spots_in_region(props[x].label,all_spots, contoursFinal)
 
             measurement = RegionMeasurement(
                     sampleid = sampleid,
@@ -840,8 +918,12 @@ class Model():
 
         self.threshold = self.preprocess_image_for_measurement(mask_path)
         self.remove_unwanted_objects_from_binary_image(regions_to_remove_from_mask_image)
+
         if self.threshold.min() == 0 and self.threshold.max() == 0:
-            raise ValueError('No objects to measure in image.')
+            if process_folder == False:
+                raise ValueError('No objects to measure in image.')
+            else:
+                return None, None, None, None
 
         region_measurements = self.create_measurement_table(sample_id,region_id,image_region,scale_in_real_world_units,mask_path,spotList)
 
@@ -872,6 +954,7 @@ class Model():
             otsuImgRL = cv2.threshold(smoothImgRL2, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1]
             fillRL = ndimage.binary_fill_holes(otsuImgRL).astype(int)
             fillRL_uint8 = fillRL.astype('uint8')
+            fillRL_uint8 = otsuImgRL.astype('uint8')
             fillRL_uint8[fillRL_uint8 > 0] = 255
 
         if self.binarise_tl_image == 1:
@@ -920,15 +1003,22 @@ class Model():
         mask = np.zeros((height, width), dtype=np.uint8)
         for contour in contourList:
             newXY = contour.inverted_paired_coordinates() # skimage takes x,y in opposite order
+
             contMask = skimage.draw.polygon2mask((mask.shape[0], mask.shape[1]), newXY)
             test_if_contour_is_internal = mask + contMask
-            if max(np.unique(test_if_contour_is_internal))>1:
+            if test_if_contour_is_internal.max() > 1:
+                #r, c = ([x for x, y in newXY], [y for x, y in newXY])
+                #rr, cc = skimage.draw.polygon(r, c)
+                #contMask[rr,cc]=False
                 boundary = skimage.segmentation.find_boundaries(contMask, mode='inner')
                 contMask = contMask.astype(int) +boundary.astype(int)
                 contMask[contMask==2]=0
-                boundary = None
-            else:
-                skimage.segmentation.expand_labels(contMask,1)
+
+            #else:
+                #rr, cc = skimage.draw.polygon(r, c)
+                #mask[rr,cc]=1
+                #copymask = copy.deepcopy(contMask)
+                #skimage.segmentation.expand_labels(contMask,1)
             mask = mask + contMask
             mask[mask == 2] = 0
             test_if_contour_is_internal = None
@@ -1082,6 +1172,9 @@ class Model():
             raise ValueError('No images found')
 
         return path, image_type
+
+    def clear_mask_path(self):
+        self.mask_path=''
 
     def get_json_path_and_region_id_and_sample_id_for_measurement(self, path, image_type):
         json_file_name, region_id = self.identify_json_file(image_type, path)
