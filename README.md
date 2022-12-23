@@ -89,7 +89,8 @@ sampleID_filename_imagetype.
     - You have the database set up. You will be prompted to browse for the database.
     - Your database contains a table called "import_shapes"
     - Your table contains the following fields: sampleid, image_id, grain_number, grain_centroid, grain_spots, area, equivalent_diameter, perimeter, minor_axis, major_axis, solidity, convex_area, formFactor, roundness, compactness, aspectRatio, minFeret, maxFeret, contour, image_dimensions, mask_image.
-
+   -IMPORTANT: of there are any holes in your grains, AnalyZr will fill them. 
+   -If you are measuring shapes in a single image, an image will be produced showing your grains, their numbers, and associated spots. Unfortunately this functionality has not yet been extended to batch processing of a folder. 
 ## Test Data
 - Test data is provided in the test_data folder. Two cases are provided:
   - RL_TL: Measuring shapes from a RL and TL image. A RL and TL images are provided in the RL_TL folder.

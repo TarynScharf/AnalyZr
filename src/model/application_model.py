@@ -7,7 +7,7 @@ import os
 import re
 import tkinter as tk
 from tkinter import messagebox
-from scipy.ndimage import label
+
 
 import cv2
 import matplotlib
@@ -21,8 +21,9 @@ import shapely
 import skimage.segmentation
 from PIL import ImageTk
 from PIL import Image
-from matplotlib import pyplot
+from scipy.ndimage import label
 from scipy import ndimage
+from skimage.measure import label
 
 from src.model import ZirconSeparationUtils, zircon_measurement_utils, FileUtils
 from src.model.composite_contour import CompositeContour
@@ -519,7 +520,7 @@ class Model():
 
         self.sampleList.sort()
 
-    def write_to_csv(self,filepath, measurements, mask_path, image_to_save):
+    def write_to_csv(self,filepath, measurements, mask_path=None, image_to_save=None):
         headers = RegionMeasurement.get_headers()
 
         with open(filepath, mode='w', newline='') as csv_file:
@@ -528,10 +529,10 @@ class Model():
 
             for measurement in measurements:
                 csv_writer.writerow(measurement.as_list())
-
-        mask_without_extension = FileUtils.get_name_without_extension(mask_path)
-        output_image_name = mask_without_extension + '_measured.png'
-        cv2.imwrite(os.path.join(os.path.dirname(filepath),output_image_name), image_to_save)
+        if mask_path is not None and image_to_save is not None:
+            mask_without_extension = FileUtils.get_name_without_extension(mask_path)
+            output_image_name = mask_without_extension + '_measured.png'
+            cv2.imwrite(os.path.join(os.path.dirname(filepath),output_image_name), image_to_save)
 
     def set_database_file_path(self, database_file_path):
         self.database_file_path = database_file_path
@@ -716,6 +717,7 @@ class Model():
                 return spots,contour
         return spots,None
 
+
     def create_measurement_table(self, sampleid, regionID, image_region, micPix, mask_file_path, all_spots):
         self.contours_by_group_tag = {}
         copy_of_threshold = copy.deepcopy(self.threshold)
@@ -727,13 +729,14 @@ class Model():
         #To avoid this, I set all positive values to 255, prior to converting to uint8 for contouring
         copy_of_threshold[copy_of_threshold>0] = 255
         copy_of_threshold_unint8 = copy_of_threshold.astype('uint8')
-
         contoursFinal, hierarchyFinal = cv2.findContours(copy_of_threshold_unint8, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
 
         for i in range (len(hierarchyFinal[0])):
             if hierarchyFinal[0][i][3] != -1:
-                raise ValueError('Image contains holes. Please ensure no holes are present')
+                #Fill holes. AnalyZr assumes that all grains are distinct, unconnected objects without any holes inside of them.
+                cv2.drawContours(copy_of_threshold_unint8,contoursFinal, i, color=255, thickness=-1)
 
+        self.threshold = label(copy_of_threshold_unint8, background=0, connectivity=None)
         props = skimage.measure.regionprops(self.threshold,)
 
         measurements = []
@@ -775,12 +778,12 @@ class Model():
         return measurements
 
     def create_labeled_image(self,region_measurements):
-        image_to_display = self.Current_Image.copy()
-
+        image_to_display = copy.deepcopy(self.threshold)#self.Current_Image.copy()
+        image_to_display[image_to_display>0]=255
         for measurement in region_measurements:
             # img_to_display = cv2.circle(img_to_display, (int(centroid_List[i][1]), int(centroid_List[i][0])), 3, (0, 0, 255), 2)
             grain_centroid = measurement.grain_centroid
-            cv2.putText(image_to_display, str(measurement.grain_number),
+            cv2.putText(image_to_display.astype('uint8'), str(measurement.grain_number),
                         (int(grain_centroid[1] - 2), int(grain_centroid[0] - 2)), cv2.FONT_HERSHEY_DUPLEX, 0.5,
                         (255,0,0))
 
@@ -929,7 +932,7 @@ class Model():
 
         if process_folder == False:
             labeled_image = self.create_labeled_image(region_measurements)
-            image_to_display = Image.fromarray(labeled_image)
+            image_to_display = Image.fromarray(labeled_image.astype('uint8'))
         else:
             image_to_display = self.threshold
 

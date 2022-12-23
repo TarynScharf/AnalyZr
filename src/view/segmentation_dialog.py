@@ -137,6 +137,7 @@ class SegmentationDialog():
         self.Browse_File.grid(column=2, row=1, padx=3, pady=5,sticky='w')
 
         self.Display_Mask = Button(self.Measure_Shapes_Frame, text="Load Mask Image", width=20, command=lambda: self.display_mask())
+        self.Display_Mask.config(state=DISABLED)
         self.Display_Mask.grid(column=3, row=1, padx=3, pady=5,sticky='w')
 
         self.Process_Folder = Label(self.Measure_Shapes_Frame, text="Process Mask Folder")
@@ -148,12 +149,13 @@ class SegmentationDialog():
         self.Browse_Folder = Button(self.Measure_Shapes_Frame, text="...", width=5, command=self.browse_for_mask_folder)
         self.Browse_Folder.grid(column=2, row=2, padx=3, pady=5,sticky='w')
 
-        self.Process_Folder = Button(self.Measure_Shapes_Frame, text="Process Folder", width=20, command=self.process_mask_folder)
-        self.Process_Folder.grid(column=3, row=2, padx=3, pady=5,sticky='w')
+        self.Process_Folder_button = Button(self.Measure_Shapes_Frame, text="Process Folder", width=20, command=self.process_mask_folder)
+        self.Process_Folder_button.config(state=DISABLED)
+        self.Process_Folder_button.grid(column=3, row=2, padx=3, pady=5,sticky='w')
 
-        self.measureShapes = Button(self.Measure_Shapes_Frame, text="Measure Shapes", command=self.measure_shapes)
+        self.measureShapes = Button(self.Measure_Shapes_Frame, text="Process Image", command=self.measure_shapes)
         self.measureShapes.config(state=DISABLED)
-        self.measureShapes.grid(column=0, row=3, padx=2, pady=5,sticky='w')
+        self.measureShapes.grid(column=5, row=1, padx=2, pady=5,sticky='w')
 
         self.moveSpot = Button(self.Measure_Shapes_Frame, text="Reposition spot [q]", command=self.view.drawing.RepositionObject)
         self.moveSpot.config(state=DISABLED)
@@ -188,6 +190,7 @@ class SegmentationDialog():
         self.view.DisplaySelectedGrain(combobox_value)
 
     def browse_for_mask_folder(self):
+
         self.Segmentation_Window.grab_release()
         json_folder_path = self.view.get_json_path()
         if json_folder_path == None:
@@ -204,6 +207,7 @@ class SegmentationDialog():
         self.set_shortcuts_for_mask_scrolling(scroll)
         self.view.NextMaskImage(scroll, self)
 
+        self.Display_Mask.config(state=DISABLED)
         self.moveSpot.config(state=NORMAL)
         self.breakLine.config(state=NORMAL)
         self.saveMask.config(state = NORMAL)
@@ -212,6 +216,8 @@ class SegmentationDialog():
         self.undo_delete.config(state = NORMAL)
         self.grain_boundary_capture.config(state = NORMAL)
         self.BinariseButton.config(state=NORMAL)
+        self.measureShapes.config(state=DISABLED)
+        self.Process_Folder_button.config(state=NORMAL)
 
     def load_spots(self):
         mask_path = self.mask_file_path.get()
@@ -320,8 +326,6 @@ class SegmentationDialog():
             self.view.model.set_image_details(path, ImageType.TL)
 
         if case_type == 'Mask':
-            #self.mask_file_path.set(path)
-            #self.update_textbox(self.mask_filepath_textbox,path)
             self.view.model.set_image_details(path, ImageType.MASK)
             self.measureShapes.config(state=NORMAL)
             self.saveMask.config(state=NORMAL)
@@ -338,6 +342,9 @@ class SegmentationDialog():
             self.measureShapes.config(state=NORMAL)
 
         elif case_type == 'File':
+            self.Display_Mask.config(state=NORMAL)
+            self.measureShapes.config(state=NORMAL)
+            self.Process_Folder_button.config(state=DISABLED)
             self.view.model.set_image_details(path, ImageType.MASK)
             self.mask_file_path.set(path)
             self.update_textbox(self.mask_filepath_textbox, path)
