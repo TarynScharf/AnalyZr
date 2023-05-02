@@ -19,7 +19,7 @@ class SegmentationDialog():
         self.Segmentation_Window.title("Image Segmentation Toolbox")
         self.Segmentation_Window.minsize(400, 110)
         self.Segmentation_Window.attributes("-topmost", 1)
-        self.Segmentation_Window.grab_set()
+        #self.Segmentation_Window.grab_set()
 
         #VARIABLES
         self.mask_file_path = tk.StringVar()
@@ -89,15 +89,19 @@ class SegmentationDialog():
 
         self.loadJson = Button(self.binarisation_frame, text="Load Json Files", width=16, command=lambda: self.view.set_json_folder_path('json',self.view.myFrame))
         self.loadJson.config()
-        self.loadJson.grid(column=1, row=2, padx=80, pady=5, sticky='w')
+        self.loadJson.grid(column=1, row=2, padx=75, pady=5, sticky='w')
 
         self.showSpots = Button(self.binarisation_frame, text="Load Spots", width=10,command=lambda: self.load_spots())
         self.showSpots.config(state=HIDDEN)
-        self.showSpots.grid(column=1, row=2, padx=200, pady=5, sticky='w')
+        self.showSpots.grid(column=1, row=2, padx=185, pady=5, sticky='w')
+
+        self.showSpots = Button(self.binarisation_frame, text="Clear Spots", width=10, command=lambda: self.clear_spots())
+        self.showSpots.config(state=HIDDEN)
+        self.showSpots.grid(column=1, row=2, padx=260, pady=5, sticky='w')
 
         self.removeBoundariesWithoutSpotsButton = Button(self.binarisation_frame, text="Remove Boundaries without Spots", width=30,command=lambda: self.remove_boundaries_without_spots())
         self.removeBoundariesWithoutSpotsButton.config(state=HIDDEN)
-        self.removeBoundariesWithoutSpotsButton.grid(column=1, row=2, padx=300, pady=5, sticky='w')
+        self.removeBoundariesWithoutSpotsButton.grid(column=1, row=2, padx=335, pady=5, sticky='w')
 
         #EDIT BOUNDARIES FRAME
         self.segmentation_label_frame = LabelFrame(self.Segmentation_Window, text='Image Segmentation')
@@ -136,7 +140,7 @@ class SegmentationDialog():
         self.Browse_File = Button(self.Measure_Shapes_Frame, text="...", width=5, command=lambda: self.Browse('File'))
         self.Browse_File.grid(column=2, row=1, padx=3, pady=5,sticky='w')
 
-        self.Display_Mask = Button(self.Measure_Shapes_Frame, text="Load Mask Image", width=20, command=lambda: self.display_mask())
+        self.Display_Mask = Button(self.Measure_Shapes_Frame, text="Display Mask Image", width=20, command=lambda: self.display_mask())
         self.Display_Mask.config(state=DISABLED)
         self.Display_Mask.grid(column=3, row=1, padx=3, pady=5,sticky='w')
 
@@ -168,7 +172,6 @@ class SegmentationDialog():
         self.ShowGrainCombobox.config(state= DISABLED)
         self.ShowGrainCombobox.grid(column=1, row=3, padx=250, pady=5, sticky='w')
         self.ShowGrainCombobox.bind('<<ComboboxSelected>>', self.DisplaySelectedGrain)
-
 
         self.view.master.unbind("s")
         self.view.master.unbind("a")
@@ -231,29 +234,34 @@ class SegmentationDialog():
             json_base_name = mask_path[0:match.start()]
 
         elif rl_path !='' and tl_path !='':
-            rl_path_split = rl_path.split('_')
+            rl_json_base_name, _ = self.view.get_unique_json_name(ImageType.RL, rl_path)
+            tl_json_base_name, _ = self.view.get_unique_json_name(ImageType.TL, tl_path)
+            '''rl_path_split = rl_path.split('_')
             tl_path_split  = tl_path.split('_')
             rl_base_name = '_'.join(rl_path_split[0:-1])
-            tl_base_name = '_'.join(tl_path_split[0:-1])
-            if rl_base_name != tl_base_name:
+            tl_base_name = '_'.join(tl_path_split[0:-1])'''
+            if rl_json_base_name != tl_json_base_name:
                 messagebox("RL and TL images do not have the same base name.")
                 return
-            json_base_name = rl_base_name
+            json_base_name = rl_json_base_name
 
         elif self.RLPath.get() == '' and self.TLPath.get() =='':
             messagebox("No mask, RL or TL image selected.")
             return
 
-        elif self.RLPath.get != '':
-            rl_path = self.RLPath.get().split('_')
-            json_base_name = '_'.join(rl_path[0:- 1])
+        elif self.RLPath.get() != '':
+            json_base_name, _ = self.view.get_unique_json_name(ImageType.RL, rl_path)
         elif self.TLPath.get !='':
-            tl_path = self.TLPath.get().split('_')
-            json_base_name = '_'.join(tl_path[0:- 1])
+            json_base_name, _ = self.view.get_unique_json_name(ImageType.TL, tl_path)
 
+        self.view.master.bind("q", lambda e: self.view.drawing.RepositionObject())
         self.view.load_spots(json_base_name)
         self.moveSpot.config(state=NORMAL)
         self.removeBoundariesWithoutSpotsButton.config(state=NORMAL)
+
+    def clear_spots(self):
+        self.view.clear_all_spots_from_canvas()
+
 
 
     def set_shortcuts_for_mask_scrolling(self, scroll_instance):
@@ -366,6 +374,7 @@ class SegmentationDialog():
             return
         mask_path = self.mask_file_path.get()
         self.view.DisplayMask(mask_path)
+        self.view.model.set_current_image(ImageType.MASK)
         self.update_textbox(self.mask_filepath_textbox,mask_path)
         region_id = JsonData.get_region_id_from_file_path(ImageType.MASK,mask_path)
         json_file = JsonData.get_json_file_name_from_collage_path(ImageType.MASK, mask_path)
@@ -380,7 +389,6 @@ class SegmentationDialog():
         self.update_textbox(self.TLTextBox, tl_path)
         self.update_textbox(self.RLTextBox, rl_path)
         self.measureShapes.config(state=NORMAL)
-
         self.deactivate_grain_selection_combobox()
 
     def measure_shapes(self):
@@ -394,7 +402,7 @@ class SegmentationDialog():
         self.view.start_measure_shapes(mask_path)
         self.moveSpot.config(state=NORMAL)
 
-        self.activate_grain_selection_combobox()
+        #self.activate_grain_selection_combobox() #this isn't working as I want it to, just yet
 
     def activate_grain_selection_combobox(self):
         grain_numbers = self.view.get_grain_labels()

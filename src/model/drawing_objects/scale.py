@@ -6,10 +6,15 @@ from src.model.drawing_objects.drawing_object import DrawingObject
 class Scale(DrawingObject):
     def __init__(self, x0, y0, x1, y1, group_tag, real_world_distance = None):
         super().__init__(group_tag)
-        self.x0 = min(x0,x1)
+        self.x0 = x0
+        self.y0=y0
+        self.x1 = x1
+        self.y1 = y1
+        #25/04/2023 If I take the mins, I can end up associating the incorrect x with  a given x.This means, if the scale is slanted, it will draw incorrectly
+        '''self.x0 = min(x0,x1)
         self.y0 = min(y0,y1)
         self.x1 = max(x0,x1)
-        self.y1 = max(y0,y1)
+        self.y1 = max(y0,y1)'''
         if real_world_distance == None:
             self.real_world_distance = 100
         else:

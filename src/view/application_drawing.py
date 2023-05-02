@@ -53,16 +53,36 @@ class Drawing():
         self.displayed_image = None
         self.object_to_reposition= None #used for spot and unwanted object repositioning
 
-    def DeleteObject(self, event):
-        if len(event.widget.find_withtag('current'))==0:
+    def DeleteObject(self, event=None, group_tag=None):
+        if event:
+            if len(event.widget.find_withtag('current'))==0:
+                return
+            thisObj = event.widget.find_withtag('current')[0]  # get the object clicked on
+            tags = self.myCanvas.gettags(thisObj)  # find the groupID for the object clicked p
+            group_tag = tags[0]
+
+        if group_tag is None:
             return
-        thisObj = event.widget.find_withtag('current')[0]  # get the object clicked on
-        tags = self.myCanvas.gettags(thisObj)  # find the groupID for the object clicked on
-        group_tag = tags[0]
+
         if group_tag == 'Image':
             return
         self.myCanvas.delete(group_tag)  # delete everything with the same groupID
-        self.model.DeleteObject(group_tag.replace('spot_','')) #pass the groupID and coordinates to the model, where everything else is handled
+        self.model.DeleteObject(group_tag.replace('spot_',''))
+        #pass the groupID and coordinates to the model, where everything else is handled
+        if 'extcont' in group_tag:
+            image = self.view.determine_display_image()
+            self.display_image(image)
+            #contours = self.model.extract_contours_from_image('extcont')
+            contours = self.model.contours_by_group_tag
+
+            #for contour in contours:
+            #    self.draw_contour(contours[contour].paired_coordinates)
+
+            for breakline in self.model.breaklines:
+                self.draw_interactive_breakline(breakline)
+
+            for spot in self.model.spots_in_measured_image:
+                self.draw_interactive_spot(spot, 'green2', 'green')
 
     def start_spot_review(self):
         self.myCanvas.unbind("<Button-1>")
@@ -180,6 +200,9 @@ class Drawing():
     def finish_scale(self,mouse_event):
         self.view.get_real_world_distance_for_scale(self.scaleLine)
         self.scaleLine = None
+        self.myCanvas.unbind("<ButtonPress-1>")
+        self.myCanvas.unbind("<B1-Motion>")
+        self.myCanvas.unbind("<ButtonRelease-1>")
 
     def DupDraw(self):
         self.rectangleType = RectangleType.DUPLICATE
@@ -207,7 +230,7 @@ class Drawing():
     def PolyComplete(self, event):
         self.myCanvas.unbind("<ButtonPress-2>")  # unbind from polygon digitisation
         new_polygon = self.model.add_new_contour(self.contour)
-        self.view.SaveBreakChanges(new_polygon)
+        self.view.draw_new_polygn_onto_mask_image(new_polygon)
         self.myCanvas.bind("<ButtonPress-3>", self.DeleteObject)
         self.myCanvas.unbind("<ButtonPress-1>")
         self.contour = None
@@ -255,7 +278,6 @@ class Drawing():
             self.myCanvas.coords(self.object_to_reposition.unique_tag, self.object_to_reposition.x0, self.object_to_reposition.y0, self.object_to_reposition.x1, self.object_to_reposition.y1)
             self.myCanvas.coords(self.object_to_reposition.unique_text_tag, self.object_to_reposition.x0 - 7, self.object_to_reposition.y0 - 7)
 
-
     def FinishObjectMove(self, moveEvent):
         self.myCanvas.unbind("<B1-Motion>")
         self.myCanvas.unbind("<ButtonRelease-1>")
@@ -268,6 +290,11 @@ class Drawing():
             self.draw_text(self.object_to_reposition.get_text_tags(), self.object_to_reposition.x0, self.object_to_reposition.y0 - 15, self.object_to_reposition.rectangle_type.value, self.object_to_reposition.get_colour())
 
         self.object_to_reposition = None
+
+    def set_scrollbar_location(self, x_fraction,y_fraction):
+        #self.myCanvas.size()
+        self.myCanvas.xview_moveto(x_fraction)
+        self.myCanvas.yview_moveto(y_fraction)
 
     def RectSpotDraw(self):
         self.rectangleType = RectangleType.SPOT_AREA

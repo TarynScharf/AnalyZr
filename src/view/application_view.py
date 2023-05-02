@@ -83,13 +83,22 @@ class View:
         self.json_folder_path = tk.StringVar()
 
     def remove_boundaries_without_spots(self):
-        self.model.remove_boundaries_without_spots()
-        threshold_image = Image.fromarray(self.model.threshold)
-        self.display_image(threshold_image)
-        for contour in self.model.contours_by_group_tag:
-            self.drawing.draw_contour(self.model.contours_by_group_tag[contour])
+        contours_to_delete = self.model.identify_boundaries_without_spots()
+        for tag in contours_to_delete:
+            self.drawing.DeleteObject(group_tag=tag)
 
+        image = self.determine_display_image()
+        self.display_image(image)
+        contours = self.model.extract_contours_from_image('extcont')
 
+        for contour in contours:
+            self.drawing.draw_contour(contour)
+
+        for breakline in self.model.breaklines:
+            self.drawing.draw_interactive_breakline(breakline)
+
+        for spot in self.model.spots_in_measured_image:
+            self.drawing.draw_interactive_spot(spot, 'green2', 'green')
 
     def load_spots(self,json_base_name):
 
@@ -98,34 +107,6 @@ class View:
 
         json_file_path, image_type,image_path  = self.model.find_json_file_when_image_type_is_unknown(json_base_name)
         region_id = JsonData.get_region_id_from_file_path(image_type, image_path)
-
-        '''
-        json_file_path_RL = None
-        json_file_path_TL = None
-        if self.model.rl_path != "":
-            image_type = ImageType.RL
-            json_file_path_RL, region_id_RL,sample_id_RL = self.model.get_json_path_and_region_id_and_sample_id_for_measurement(self.model.rl_path,ImageType.RL)
-
-        if self.model.tl_path !="" and self.model.rl_path=="":
-            image_type = ImageType.TL
-            json_file_path_TL, region_id_TL, sample_id_TL = self.model.get_json_path_and_region_id_and_sample_id_for_measurement(self.model.tl_path,ImageType.TL)
-
-        if json_file_path_RL != None and json_file_path_TL != None:
-            messagebox.showinfo('Error', 'A json file exists for both the RL and TL image. Only one json file is allowed per sample.')
-            return
-
-        if json_file_path_RL != None:
-            json_path = json_file_path_RL
-
-        if json_file_path_TL != None:
-            json_path = json_file_path_TL
-
-        json_file_path, region_id, sample_id = self.model.get_json_path_and_region_id_and_sample_id_for_measurement(json_path, image_type)
-        if region_id == None:
-            messagebox.showinfo('Error',
-                                f'Image Region {region_id} cannot be found in file {os.path.join(self.view.model.json_folder_path, json_file_path)}.\n'
-                                'The mask cannot be displayed.')
-            return'''
 
         data = JsonData.load_all(json_file_path)
 
@@ -139,6 +120,10 @@ class View:
         for region_to_remove in regions_to_remove_from_mask_image:
             self.drawing.draw_interactive_rectangel(region_to_remove)
 
+    def clear_all_spots_from_canvas(self):
+        for spot in self.model.spots_in_measured_image:
+            self.drawing.myCanvas.delete(spot.group_tag)  # delete everything with the same groupID
+            self.model.clear_spots_in_measured_image()
 
     def DisplaySelectedGrain(self,grain_number):
         selected_grain_image = copy.deepcopy(self.model.threshold)
@@ -148,9 +133,12 @@ class View:
             selected_grain_image[np.where(selected_grain_image == int(grain_number))] = 255
         elif grain_number == 'all':
             selected_grain_image[np.where(selected_grain_image != 0)]=255
-
         image_to_display = Image.fromarray(selected_grain_image.astype(np.uint8))
         self.display_image(image_to_display)
+
+        centroid = self.model.find_grain_centroid(selected_grain_image)
+        offset = 1
+        self.drawing.set_scrollbar_location((centroid[0]+offset)/image_to_display.size[0],(centroid[1]+offset)/image_to_display.size[1])
 
     def get_grain_labels(self):
         list_of_grain_labels = np.unique(self.model.threshold)
@@ -203,11 +191,17 @@ class View:
 
         self.model.json_file, region_id, sample_id = self.model.get_json_path_and_region_id_and_sample_id_for_measurement(mask_file_path, ImageType.MASK)
         data = JsonData.load_all(self.model.json_file)
+
         if region_id == None or region_id == '':
             region_id = data.image_regions[0].group_tag
+
         spotList, regions_to_remove_from_mask_image, scale_in_real_world_units, image_region = self.model.read_spots_unwanted_scale_from_json(data, self.model.json_file, region_id, mask_scrolling = True)
         self.model.spots_in_measured_image = spotList
         self.model.unwanted_objects_in_image = regions_to_remove_from_mask_image
+
+        self.DisplayMask(mask_file_path)
+        for spot in spotList:
+            self.drawing.draw_interactive_spot(spot, 'green2', 'green')
 
         source_RL_path = scroll_instance.source_files[mask_file_path][0]
         source_TL_path = scroll_instance.source_files[mask_file_path][1]
@@ -231,8 +225,10 @@ class View:
         if img_found == False:
             img = cv2.imread(mask_file_path)
 
+
         image_pill = Image.fromarray(img)
         self.drawing.clear_canvas_and_display_image(image_pill)
+
 
         #self.DisplayMask(mask_file_path)
         try:
@@ -266,13 +262,17 @@ class View:
 
         scroll_instance.decrement_pointer()
         mask_file_path = scroll_instance.get_current_mask_file_path()
+
         self.model.json_file, region_id, sample_id = self.model.get_json_path_and_region_id_and_sample_id_for_measurement(mask_file_path,ImageType.MASK)
         data = JsonData.load_all(self.model.json_file)
+
         if region_id == None or region_id == '':
             region_id = data.image_regions[0].group_tag
+
         spotList, regions_to_remove_from_mask_image, scale_in_real_world_units, image_region = self.model.read_spots_unwanted_scale_from_json(data, self.model.json_file, region_id)
         self.model.spots_in_measured_image = spotList
         self.model.unwanted_objects_in_image = regions_to_remove_from_mask_image
+
         self.DisplayMask(mask_file_path)
         for spot in spotList:
             self.drawing.draw_interactive_spot(spot, 'green2', 'green')
@@ -340,6 +340,20 @@ class View:
             self.drawing.clear_canvas_and_display_image(image)
             self.drawing.draw_image_data(json_data)
 
+    def determine_display_image(self):
+        current_image = self.model.Current_Image
+        if self.model.Current_Image_Type == ImageType.MASK:
+            #Set all non-zero values to 255. This is because if the image was previously labelled, all labels above 255 will be reset to zero onwards.
+            #This means the 255th label will be zero (background) and disappear.
+            current_image[current_image > 0] = 255
+            image = np.array(current_image, dtype=np.uint8)
+            image_to_display = Image.fromarray(image)
+
+        else:
+            image_to_display = Image.fromarray(current_image)
+
+        return image_to_display
+
     def display_image(self, image):
         self.drawing.clear_canvas_and_display_image(image)
 
@@ -395,10 +409,30 @@ class View:
         for contour in contours:
             self.drawing.draw_contour(contour)
 
+        for breakline in self.model.breaklines:
+            self.drawing.draw_interactive_breakline(breakline)
+
+        for spot in self.model.spots_in_measured_image:
+            self.drawing.draw_interactive_spot(spot, 'green2', 'green')
+
+    def draw_new_polygn_onto_mask_image(self, new_contour):
+        image, contours = self.model.draw_new_polygn_onto_mask_image(new_contour)
+        self.display_image(image)
+
+        for contour in contours:
+            self.drawing.draw_contour(contour)
+
+        for breakline in self.model.breaklines:
+            self.drawing.draw_interactive_breakline(breakline)
+
+        for spot in self.model.spots_in_measured_image:
+            self.drawing.draw_interactive_spot(spot, 'green2', 'green')
+
     def undo_delete_contour(self):
         contour_to_restore = self.model.undo_delete_contour()
         if contour_to_restore is not None:
-            self.drawing.draw_contour(contour_to_restore)
+            self.draw_new_polygn_onto_mask_image(contour_to_restore)
+            #self.drawing.draw_contour(contour_to_restore)
             self.drawing.ensure_contour_does_not_overlie_other_contours(contour_to_restore)
 
     def binariseImages(self,RLPath, TLPath, rlVar, tlVar):
@@ -420,7 +454,7 @@ class View:
     def start_measure_shapes(self,mask_path):
         try:
             image_to_display, contours, spotList, region_measurements = self.model.measure_shapes(mask_path,False)
-            image_for_output_file = np.float32(copy.deepcopy(image_to_display))
+            image_for_output_file = cv2.cvtColor(np.float32(copy.deepcopy(image_to_display)),cv2.COLOR_GRAY2RGB)
         except ValueError as e:
             self.open_error_message_popup_window(str(e))
             return
@@ -428,29 +462,27 @@ class View:
             return
 
         self.drawing.clear_canvas_and_display_image(image_to_display)
+
+        #DRAW CONTOURS ON TO THE IMAGE
         for contour in contours:
             self.drawing.draw_contour(contour)
-            #for output image file
-            #cv2.polylines needs the coordinates as a tuple
-            paired_coords = tuple(contour.paired_coordinates())
-            #cv2.polylines needs coordinates as int not float
-            #int_paired_coordinates = tuple(tuple(map(int, tup)) for tup in paired_coords)
-            #cv2.polylines(image_for_output_file,int_paired_coordinates, True, (0,0,255))
             cv2.polylines(image_for_output_file,
                           np.array(contour.paired_coordinates(), dtype=np.int32).reshape((-1, 1, 2)), True, (0, 0, 255),
                           2)
+        #DRAW SPOTS ONTO THE IMAGE
         for spot in spotList:
             self.drawing.draw_interactive_spot(spot, 'green2','green')
-            #for output image file
-            #cv2.circle center coordinates must be int not float, thus round the spot coordinates
             cv2.circle(image_for_output_file,(round(spot.x0),round(spot.y0)),4,(0,255,0),-1)
             cv2.putText(image_for_output_file,spot.group_tag.replace('spot_',''),(round(spot.x0), round(spot.y0)+15), cv2.FONT_HERSHEY_SIMPLEX,0.5,(0,255,0),1, cv2.LINE_AA)
 
-        MeasurementDialog(self,region_measurements, mask_path,image_for_output_file)
-        #mask_without_extension = FileUtils.get_name_without_extension(mask_path)
-        #output_image_name = mask_without_extension + '_measured.png'
-        #cv2.imwrite(output_image_name, image_for_output_file)
+        #DRAW GRAIN NUMBERS ONTO THE IMAGE
+        for measurement in region_measurements:
+            grain_centroid = measurement.grain_centroid
+            cv2.putText(image_for_output_file, str(measurement.grain_number),
+                        (int(grain_centroid[1] - 2), int(grain_centroid[0] - 2)), cv2.FONT_HERSHEY_DUPLEX, 0.5,
+                        (255,0,0))
 
+        MeasurementDialog(self,region_measurements, mask_path,image_for_output_file)
 
     def process_all_masks_in_folder(self, mask_file_folder):
         all_folder_measurements = []
@@ -632,6 +664,10 @@ class View:
         else:
             return self.model.json_folder_path
 
+    def get_unique_json_name(self,Image_type, image_path):
+        json_unique_name, region_id = self.model.identify_json_file(Image_type, image_path)
+        unique_json_name_without_extension = os.path.splitext(json_unique_name)[0]
+        return unique_json_name_without_extension, region_id
 
 
 

@@ -187,7 +187,6 @@ class JsonData:
 
         raise ValueError(f'Unsupported filename for image type: {image_type.value}.')
 
-
     @staticmethod
     def get_region_id_from_file_path(image_type, image_path):
         image_name = FileUtils.get_name_without_extension(image_path)
@@ -207,6 +206,10 @@ class JsonData:
             else:
                 raise ValueError(f'File name {image_name} is not of the correct form. No {pattern} found.')
 
+            return region_id
+
+        if image_type == ImageType.COLLAGE:
+            region_id = None
             return region_id
 
     @staticmethod

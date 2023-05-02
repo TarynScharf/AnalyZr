@@ -1,6 +1,7 @@
 import copy
 import csv
 import datetime
+
 import json
 import math
 import os
@@ -21,18 +22,14 @@ import shapely
 import skimage.segmentation
 from PIL import ImageTk
 from PIL import Image
-from scipy.ndimage import label
+#from scipy.ndimage import label
 from scipy import ndimage
+from skimage.draw import polygon2mask
 from skimage.measure import label
-
 from src.model import ZirconSeparationUtils, zircon_measurement_utils, FileUtils
-from src.model.composite_contour import CompositeContour
 from src.model.drawing_objects.breakline import Breakline
 from src.model.drawing_objects.contour import Contour
-from src.model.drawing_objects.rectangle import RectangleType, Rectangle
-from src.model.drawing_objects.scale import Scale
 from src.model.drawing_objects.spot import Spot
-from src.model.image_data import ImageData
 from src.model.image_type import ImageType
 from src.model.json_data import JsonData
 from src.model.region_measurements import RegionMeasurement
@@ -52,11 +49,11 @@ class Model():
         self.tl_image = None
 
         self.Current_Image = None
+        self.Current_Image_Type = None
 
         self.mask_path = None
         self.contours_by_group_tag = {}  # a list of all the polygon objects to turn into  binary masks
         self.deleted_contours = []  # in case of an undo
-        #self.Current_Image = 'TL'  # tracks which image type is displayed
         self.width = 0  # used to set image dimensions on canvas, and in saved images. Ensures saved images have the same dimensions as input images. Important for relating spots to images, spatially.
         self.height = 0  # used to set image dimensions on canvas, and in saved images. Ensures saved images have the same dimensions as input images. Important for relating spots to images, spatially.
         self.breaklines = []
@@ -65,7 +62,7 @@ class Model():
         self.currentSpotNumber = tk.StringVar()
         self.image_iterator_current = None
         self.spotPointCount = 0
-        self.spots_in_measured_image = None
+        self.spots_in_measured_image = []
         self.text_label = ''  # label for duplicate grains and spot scales
         self.count = 0  # Used to put id's onto break  lines
         self.database_file_path = None
@@ -124,8 +121,7 @@ class Model():
 
             return json_file_name, image_type,image_path
 
-
-    def remove_boundaries_without_spots(self):
+    def identify_boundaries_without_spots(self):
         contours_to_delete=[]
         for group_tag in self.contours_by_group_tag:
             delete_contour=True
@@ -137,31 +133,39 @@ class Model():
                         delete_contour= False
             if delete_contour==True:
                 contours_to_delete.append(group_tag)
-        for cont in contours_to_delete:
-            self.delete_contour(cont)
+
+        return contours_to_delete
 
     def DeleteObject(self, group_tag):
         if 'line_' in group_tag: #breaklines don't get written to a json file
             self.breaklines = [x for x in self.breaklines if x.group_tag != group_tag]
 
         elif 'contour_' in group_tag:
+            contour_coords = self.contours_by_group_tag[group_tag].paired_coordinates()
+            points = np.array(contour_coords, 'int32')
+            self.threshold[self.threshold > 0] = 255
+            updatedMask = cv2.fillPoly(np.array(self.threshold, dtype=np.uint8), [points], color=(255, 255, 255))
+            updatedMask[updatedMask > 0] = 255
+            self.threshold = updatedMask
+
+
+
             self.delete_contour(group_tag)
 
         elif 'extcont_' in group_tag:
             contour_coords = self.contours_by_group_tag[group_tag].paired_coordinates()
             polygon = shapely.geometry.Polygon(contour_coords)  # create a shapely polygon
             representative_point = polygon.representative_point()  # using the shapely polygon, get a point inside the polygon
-            cv2.imwrite('C:/Users/20023951/Documents/CaseStudy_JackHills/Zircon Images/Mount_37A/Masks/threshold_delete_object_line115.png', self.threshold)
-            self.threshold, num_features = label(self.threshold)
-            cv2.imwrite('C:/Users/20023951/Documents/CaseStudy_JackHills/Zircon Images/Mount_37A/Masks/labeled_delete_object_line118.png',
-                        self.threshold)
-
-            #self.threshold = skimage.measure.label(self.threshold, background=0, connectivity=None).astype('uint8')
+            self.threshold = label(self.threshold)
             blob_label = self.threshold[int(representative_point.y),int(representative_point.x)]
 
             if int(blob_label)!=0:
                 self.threshold[self.threshold==blob_label]=0
+
             self.delete_contour(group_tag)
+
+            if self.Current_Image_Type == ImageType.MASK:
+                self.Current_Image = self.threshold
 
         else:
             if self.image_iterator_current != None:#When conducting data capture
@@ -236,8 +240,31 @@ class Model():
         self.all_contours[contour.unique_tag] = contour
         return contour
 
+    def draw_new_polygn_onto_mask_image(self,new_boundary = None):
+        if new_boundary != None:
+            points = np.array(new_boundary.paired_coordinates(),'int32')
+            self.threshold[self.threshold>0]=255
+            updatedMask = cv2.fillPoly(np.array(self.threshold,dtype=np.uint8),[points], color=(255,255,255))
+            updatedMask[updatedMask > 0] = 255
+            self.threshold = updatedMask
+            if self.Current_Image_Type == ImageType.MASK:
+                self.Current_Image = self.threshold
+            image = self.Current_Image
+            image_pill = Image.fromarray(image)
+            #contours = self.get_current_image_contours()
+
+            def filter_polygon_by_area(contour):
+                area = cv2.contourArea(contour, False)
+                return area >= 50
+            contours = self.extract_contours_from_image('extcont', filter_polygon_by_area)
+
+            return image_pill, contours
+
     def SaveBreakChanges(self,new_boundary = None):
         updatedMask = self.convert_contours_to_mask_image(self.height, self.width, self.contours_by_group_tag.values())
+        #TODO might have to delete this
+        '''self.threshold[self.threshold>0]=255
+        #updatedMask = np.array(self.threshold,dtype=np.uint8)'''
 
         # if the user has digitised a new grain boundary manually, draw it on the mask image
         if new_boundary != None:
@@ -251,14 +278,21 @@ class Model():
 
         #label each grain uniquely
         updatedMask[updatedMask > 0] = 255
-        #labelim = skimage.measure.label(updatedMask, background=0, connectivity=None)
         self.threshold = updatedMask #labelim.astype('uint8')
 
-        image_to_display = updatedMask
+        #locate the correct background image to display
+        if self.Current_Image_Type == ImageType.MASK:
+            self.Current_Image = self.threshold
+        image_to_display = self.Current_Image
+        #image_to_display[image_to_display>0]=255
         image_pill = Image.fromarray(image_to_display)
-        self.img = ImageTk.PhotoImage(image=image_pill)
-        contours = self.extract_contours_from_image('extcont')
 
+        def filter_polygon_by_area(contour):
+            area = cv2.contourArea(contour, False)
+            return area>=50
+
+        contours = self.extract_contours_from_image('extcont',filter_polygon_by_area)
+        #contours = self.get_current_image_contours()
 
         return image_pill, contours
 
@@ -271,6 +305,7 @@ class Model():
         contoursFinal, hierarchyFinal = cv2.findContours(copy_of_threshold_unint8, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
         count_contour = 0
         self.contours_by_group_tag.clear()
+
         for i in range(len(contoursFinal)):
             if len(contoursFinal[i]) < 3:
                 continue
@@ -286,7 +321,6 @@ class Model():
             polygon = Contour(groupID, coordinate_pairs)
             self.contours_by_group_tag[polygon.group_tag] = polygon
             count_contour += 1
-
 
         return list(self.contours_by_group_tag.values())
 
@@ -435,7 +469,8 @@ class Model():
         self.set_current_image(ImageType.MASK)
 
     def get_threshold_image(self):
-        threshold_image = Image.fromarray(self.threshold)
+        self.threshold[self.threshold>0]=255
+        threshold_image = Image.fromarray(np.array(self.threshold,dtype=np.uint8))
         return threshold_image
 
     def load_current_mask(self):
@@ -614,15 +649,10 @@ class Model():
         return image, image_data
 
     def preprocess_image_for_measurement(self, mask_file_path):
-        #if mask_file_path is not None and mask_file_path.strip() != '':
-        #    self.threshold = cv2.imread(mask_file_path)[:, :, 0]
-        #    self.width = self.threshold.shape[1]
-        #    self.height = self.threshold.shape[0]
-        image_remove = ZirconSeparationUtils.removeSmallObjects(self.threshold,1000) #30 # remove small objects below a threshold size (max object size/15)
+        image_remove = ZirconSeparationUtils.removeSmallObjects(self.threshold,6) #30 # remove small objects below a threshold size (max object size/15)
         image_clear = skimage.segmentation.clear_border(labels=image_remove, bgval=0,buffer_size=1)  # remove objects that touch the image boundary
-        #image_clear = skimage.segmentation.clear_border(labels=self.threshold, bgval=0,buffer_size=1)  # remove objects that touch the image boundary
-        #image_clear_uint8 = image_clear.astype('uint8')
-        return image_clear#image_clear_uint8
+
+        return image_clear
 
     def read_spots_unwanted_scale_from_json(self,json_data, json_file_path,regionID, mask_scrolling = None):
         spotList = []
@@ -717,6 +747,9 @@ class Model():
                 return spots,contour
         return spots,None
 
+    def find_grain_centroid(self,image):
+        props = skimage.measure.regionprops(image,)
+        return props[0].centroid
 
     def create_measurement_table(self, sampleid, regionID, image_region, micPix, mask_file_path, all_spots):
         self.contours_by_group_tag = {}
@@ -941,6 +974,7 @@ class Model():
         return image_to_display, contours, spotList,region_measurements
 
     def binariseImages(self):
+        self.spots_in_measured_image = None
         self.breaklines.clear()
         self.contours_by_group_tag = {}
         self.deleted_contours = []
@@ -950,6 +984,7 @@ class Model():
             if self.rl_image is None:
                 raise ValueError('No reflected light image selected')
             self.Current_Image = self.rl_image
+            self.Current_Image_Type = ImageType.RL
 
             grayRL = cv2.cvtColor(self.rl_image, cv2.COLOR_BGR2GRAY)
             smoothImgRL1 = cv2.bilateralFilter(grayRL, 75, 15, 75)
@@ -965,6 +1000,7 @@ class Model():
             if self.tl_image is None:
                 raise ValueError('No transmitted light image selected')
             self.Current_Image = self.tl_image
+            self.Current_Image_Type = ImageType.TL
 
             grayTL = cv2.cvtColor(self.tl_image, cv2.COLOR_BGR2GRAY)
             smoothImgTL1 = cv2.bilateralFilter(grayTL, 75, 15, 75)
@@ -1139,12 +1175,15 @@ class Model():
     def set_current_image(self,image_type):
         if image_type == ImageType.TL:
             self.Current_Image = self.tl_image
+            self.Current_Image_Type = ImageType.TL
         elif image_type == ImageType.RL:
             self.Current_Image = self.rl_image
+            self.Current_Image_Type = ImageType.RL
         elif image_type == ImageType.MASK:
             image = self.threshold.copy()
             image[image > 0] = 255
             self.Current_Image = np.stack((image,) * 3, axis=-1)
+            self.Current_Image_Type = ImageType.MASK
         else:
             raise Exception('Unknown image type '+str(image_type))
         return Image.fromarray(self.Current_Image)
@@ -1154,6 +1193,9 @@ class Model():
             if spot.unique_tag == unique_tag:
                 return spot
         return None
+
+    def clear_spots_in_measured_image(self):
+        self.spots_in_measured_image =[]
 
     def find_unwanted_object_in_measured_image_by_unique_tag(self,unique_tag):
         for unwanted_object in self.unwanted_objects_in_image:
